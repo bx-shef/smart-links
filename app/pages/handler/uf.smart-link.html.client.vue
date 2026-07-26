@@ -35,18 +35,18 @@ const isSetUfSettings = ref(true)
 const isEditMode = ref(false)
 
 /**
- * Это код текущего поля
+ * UF field code of the current placement
  */
 const ufCode = ref('')
 const currentEntityTypeId = ref(EnumCrmEntityTypeId.undefined)
 const currentEntityId = ref(0)
 const configUfSetting = ref<undefined | UfSmartLinkType>(undefined)
 /**
- * Это код поля в которое пишем id
+ * Code of the destination field we write the linked id into
  */
 const ufDestinationCode = ref('')
 /**
- * Это сптсок из которого мы что-то выберем
+ * Candidate list to pick a target from
  */
 const listEntity = ref<EntityItem[]>([])
 
@@ -118,7 +118,7 @@ async function loadData(
     || originEntity.id < 1
     || originEntity[ufDestinationCode.value] < 1
   ) {
-    // вообще не загрузило
+    // nothing loaded at all
     link.makeEmpty(
       configUfSetting.value.target.entityTypeId,
       configUfSetting.value.target.entityMode
@@ -145,7 +145,7 @@ async function loadData(
         !Type.isNumber(targetEntity.id)
         || targetEntity.id < 1
       ) {
-        // в источнике есть, а по факту нет (или прав нет)
+        // present in the source, but missing in fact (or no access rights)
         link.initFromBatch({
           entityMode: configUfSetting.value.target.entityMode,
           entityTypeId: configUfSetting.value.target.entityTypeId,
@@ -154,7 +154,7 @@ async function loadData(
         })
         await preLoadData(isFixLoadPage)
       } else {
-        // все-таки загрузили ссылку
+        // link resolved successfully
         link.initFromBatch({
           entityMode: configUfSetting.value.target.entityMode,
           entityTypeId: configUfSetting.value.target.entityTypeId,
@@ -188,7 +188,7 @@ async function loadData(
         !Type.isNumber(targetEntity.id)
         || targetEntity.id < 1
       ) {
-        // в источнике есть, а по факту нет (или прав нет)
+        // present in the source, but missing in fact (or no access rights)
         link.initFromBatch({
           entityMode: configUfSetting.value.target.entityMode,
           entityTypeId: configUfSetting.value.target.entityTypeId,
@@ -197,7 +197,7 @@ async function loadData(
         })
         await preLoadData(isFixLoadPage)
       } else {
-        // все-таки загрузили ссылку
+        // link resolved successfully
         link.initFromBatch({
           entityMode: configUfSetting.value.target.entityMode,
           entityTypeId: configUfSetting.value.target.entityTypeId,
@@ -214,7 +214,7 @@ async function loadData(
 }
 
 /**
- * Делает предзагрузку списка элементов для подбора
+ * Pre-loads the list of candidate items for picking
  */
 async function preLoadData( isFixLoadPage: boolean = true ) {
   if (!configUfSetting.value) {
@@ -288,7 +288,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
 
       const listResult: EntityItem[] = []
 
-      // Сейчас выберем с учтом ID - тк OR нет поддержки
+      // First pass: filter by ID (Lists has no OR support)
       if (filterTitle.value.length > 0) {
         filter['ID'] = filterTitle.value
       }
@@ -320,7 +320,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
         } as EntityItem)
       })
 
-      // Сейчас выберем с учтом заголовка
+      // Second pass: filter by title
       if (filterTitle.value.length > 0) {
         filter['ID'] = undefined
         filter['%NAME'] = filterTitle.value
@@ -390,7 +390,7 @@ async function makeOpenLink() {
 }
 
 /**
- * Новое создаем
+ * Create a new target entity
  */
 async function addNewEntity() {
   if (!$b24) {
@@ -400,7 +400,7 @@ async function addNewEntity() {
   const url = appSettings.getNewTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', '0')
   const path = $b24.slider.getUrl(url)
   /**
-   * @todo ут нужно подмены и заполнение параметров написать адекватное
+   * @todo write proper param substitution / prefill here
    */
   // ?=&fieldId=&=&shSmartLink_ENTITY_ID=&shSmartLink_ENTITY_TYPE_ID=2
 
@@ -676,7 +676,7 @@ onUnmounted(() => {
       <div class="relative overflow-hidden">
         <div v-if="link.isEmpty" class="h-[245px]">
           <div v-if="page.isLoading">
-            <ProseP>грузим...</ProseP>
+            <ProseP>{{ $t('uf.smart-link.list.loading') }}</ProseP>
           </div>
           <template v-else>
             <B24TableWrapper
@@ -703,12 +703,12 @@ onUnmounted(() => {
                       />
                       <B24Input
                         v-model="filterTitle"
-                        placeholder="Что-то из названия или Id"
+                        :placeholder="$t('uf.smart-link.list.searchPlaceholder')"
                         @keyup.enter="preLoadData(true)"
                       />
                       <B24Button
                         loading-auto
-                        label="Найти"
+                        :label="$t('uf.smart-link.list.search')"
                         @click="preLoadData(true)"
                       />
                       <B24Button
@@ -727,7 +727,7 @@ onUnmounted(() => {
                       class="mt-[4px]"
                       size="sm"
                       color="air-secondary-alert"
-                      description="Пусто. Ничего не нашли"
+                      :description="$t('uf.smart-link.list.empty')"
                     />
                   </td>
                 </tr>

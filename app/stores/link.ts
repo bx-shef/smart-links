@@ -63,7 +63,7 @@ export const useLinkStore = defineStore(
     }
 
     /**
-     * Выставляет состояние - ссылки нет
+     * Reset to the "no link" state
      */
     function makeEmpty(paramEntityTypeId: number, paramEntityMode: string) {
       id.value = 0

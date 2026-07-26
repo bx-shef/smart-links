@@ -18,7 +18,7 @@ export const useAppSettingsStore = defineStore(
     const status = ref<TypeEnumAppStatus>('Free')
     const isTrial = ref(true)
     /**
-     * @todo Менять конфиг тут
+     * @todo edit the config here (hardcoded until the settings UI lands; see docs/PROJECT_MAP.md)
      */
     const configUfListSettings = reactive<UfListConfigType>({
       UF_CRM_DEAL_FIZ_DOGOVOR_GETTER: {
@@ -39,7 +39,7 @@ export const useAppSettingsStore = defineStore(
         },
         target: {
           entityMode: 'lists',
-          entityTypeId: 41, // id инфоблока
+          entityTypeId: 41, // iblock id
           customFilter: {
             'PROPERTY_RAZOVYY': false
           },
@@ -69,7 +69,7 @@ export const useAppSettingsStore = defineStore(
         },
         target: {
           entityMode: 'lists',
-          entityTypeId: 41, // id инфоблока
+          entityTypeId: 41, // iblock id
           customFilter: {
             'PROPERTY_RAZOVYY': false
           },
@@ -99,7 +99,7 @@ export const useAppSettingsStore = defineStore(
         },
         target: {
           entityMode: 'lists',
-          entityTypeId: 41, // id инфоблока
+          entityTypeId: 41, // iblock id
           customFilter: {
             'PROPERTY_RAZOVYY': false
           },
@@ -168,7 +168,7 @@ export const useAppSettingsStore = defineStore(
       }
 
       /**
-       * @memo раскомментируй когда сделаешь страницу настроек
+       * @memo uncomment once the settings page is implemented
        */
       // if (data.configUfListSettings) {
       //   Object.assign(configUfListSettings, data.configUfListSettings)

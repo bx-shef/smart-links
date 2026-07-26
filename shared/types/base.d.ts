@@ -8,9 +8,9 @@ export interface IStep {
 
 // region UfSmartLinkType ////
 export type UfSmartLinkType = {
-  // это Uf в который запишем/прочитаем результат
+  // UF field where we store/read the linked entity id
   ufDestination: string
-  // это источник - то из чего мы линкуемся
+  // source: the entity we link FROM
   orign: {
     clientFields: {
       companyId?: string
@@ -25,7 +25,7 @@ export type UfSmartLinkType = {
       dogovor: boolean
     }
   }
-  // это цель - то к чему мы линкуемся
+  // target: the entity we link TO
   target: {
     entityMode: 'crm' | 'lists',
     entityTypeId: number

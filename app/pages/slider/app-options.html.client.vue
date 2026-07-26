@@ -106,7 +106,7 @@ async function makeSave() {
     page.isLoading = true
 
     /**
-     * @memo Раскоментируй после того как сделаешь настройки
+     * @memo persist the edited config into app options
      */
     appSettings.configUfListSettings[ufCode.value] = JSON.parse(JSON.stringify(ufSmartLink.value))
 
