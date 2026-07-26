@@ -26,7 +26,9 @@ export default defineNuxtConfig({
       b24FormSecret: '',
       b24FormLoaderScript: '',
       // Bitrix24 Market listing code; empty => rating prompt disabled (fail-safe).
-      b24MarketCode: ''
+      b24MarketCode: '',
+      // Build commit sha ('dev' locally); overridden by NUXT_PUBLIC_COMMIT_SHA at build/runtime.
+      commitSha: 'dev'
     }
   },
   devServer: {

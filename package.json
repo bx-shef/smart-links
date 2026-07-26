@@ -13,7 +13,7 @@
     "postinstall": "nuxt prepare",
     "lint": "eslint .",
     "lint:fix": "eslint --fix .",
-    "typecheck": "nuxt prepare && vue-tsc --noEmit -p .nuxt/tsconfig.json",
+    "typecheck": "nuxt prepare && vue-tsc --noEmit -p .nuxt/tsconfig.json && vue-tsc --noEmit -p .nuxt/tsconfig.server.json",
     "test": "vitest run",
     "test:unit": "vitest run",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
