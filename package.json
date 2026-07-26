@@ -30,12 +30,14 @@
     "@unovis/ts": "^1.6.0",
     "@unovis/vue": "^1.6.0",
     "luxon": "^3.7.1",
-    "nuxt": "^4.0.3"
+    "nuxt": "^4.0.3",
+    "pg": "^8.22.0"
   },
   "devDependencies": {
     "@nuxt/eslint": "^1.9.0",
     "@types/luxon": "^3.7.1",
     "@types/node": "^24.5.2",
+    "@types/pg": "^8.20.0",
     "consola": "^3.4.2",
     "eslint": "^9.34.0",
     "openai": "^5.16.0",
