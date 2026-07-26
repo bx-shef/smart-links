@@ -96,6 +96,12 @@
       "field": {
         "label": "Ссылка"
       },
+      "list": {
+        "loading": "грузим...",
+        "searchPlaceholder": "Что-то из названия или Id",
+        "search": "Найти",
+        "empty": "Пусто. Ничего не нашли"
+      },
       "error": {
         "edit-mode" : {
           "title": "Обращаю ваше внимание!",
