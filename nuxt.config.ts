@@ -24,7 +24,9 @@ export default defineNuxtConfig({
     public: {
       b24FormId: '',
       b24FormSecret: '',
-      b24FormLoaderScript: ''
+      b24FormLoaderScript: '',
+      // Bitrix24 Market listing code; empty => rating prompt disabled (fail-safe).
+      b24MarketCode: ''
     }
   },
   devServer: {
