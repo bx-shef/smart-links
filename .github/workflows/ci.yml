@@ -27,5 +27,5 @@ jobs:
       - run: pnpm lint
       - run: pnpm typecheck
       - run: pnpm test
-      # SSG build: validates the app compiles and generates static output.
-      - run: pnpm generate
+      # Served build (Nitro node-server) — the primary deploy path (Black Hole).
+      - run: pnpm build

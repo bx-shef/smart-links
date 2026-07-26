@@ -53,6 +53,17 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 - `marketDetailPath`, `NUXT_PUBLIC_B24_MARKET_CODE` — остаются; клиент открывает Маркет по решению
   **сервера** (get `/api/app-rating`).
 
+## Прогресс
+
+- **S1 (каркас) — сделано:** Nitro-сервер, `server/api/health` (чистый `healthInfo` из
+  `app/utils/build` + тесты), served-сборка `pnpm build` (preset node-server) проверена локально —
+  `node .output/server/index.mjs` отдаёт `/…/api/health` → `{status:'ok',commit,commitUrl,time}`.
+  CI переведён с `generate` на `build`. Серверный typecheck добавлен в `pnpm typecheck`.
+  - ⚠ **baseURL `/smart-link/`**: приложение сейчас смонтировано под этим префиксом (наследие
+    архивной модели), поэтому health доступен как `/smart-link/api/health`, а корень редиректит.
+    Для публичного лендинга на `/` и health-check деплоя на фазе лендинга/S3 пересмотрим baseURL
+    (лендинг на `/`, in-portal — под своим префиксом), сверяясь с эталоном.
+
 ## Живые проверки на тест-портале
 
 Тест-портал через вебхук (`.env.b24test`, `B24_HOOK`, **в репозиторий не коммитим**). Установлено:
