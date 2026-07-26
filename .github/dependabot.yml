@@ -1,0 +1,18 @@
+version: 2
+
+# Dependency updates for SmartLinks. Single Nuxt app at the repo root (npm) + GitHub Actions.
+# No Docker image here — the app ships as a static archive, not a container (see docs/PROJECT_MAP.md).
+
+updates:
+  # App npm deps (root package.json).
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+
+  # GitHub Actions — allow all updates including major bumps (they mostly track the Actions
+  # runtime, e.g. Node 20 → 24). Review each PR before merging; don't auto-block by version type.
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
