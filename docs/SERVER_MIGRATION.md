@@ -55,6 +55,14 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 
 ## Прогресс
 
+- **S2b (DB-слой рейтинга) — сделано:** чистые ядра `server/utils/appRatingPolicy.ts`
+  (`shouldPrompt`, Date-based) и `server/utils/appRatingStore.ts` (DI над `QueryFn`,
+  get/markPrompted/markOpened/markReviewed/clearOpened; ключ `portal_key`) — тесты фейком.
+  Живой край: `server/db/query.ts` (тип `QueryFn`), `server/db/client.ts` (`pg` пул по
+  `DATABASE_URL`, `dbEnabled`), `server/db/schema.ts` (таблица `app_rating`),
+  `server/plugins/migrate.ts` (идемпотентная миграция на старте, **no-op без `DATABASE_URL`**).
+  Проверено: `pnpm build` + `node .output/server/index.mjs` без `DATABASE_URL` стартует и отдаёт
+  health (migrate тихо пропущен). ⚠ Введена зависимость **`pg`**.
 - **S2a (верификация фрейм-токена) — сделано:** порт чистого ядра из эталона —
   `server/utils/b24Rest.ts` (SSRF-гард `isSafeB24Domain`, `normaliseHost`, `isAuthRejection`),
   `frameAuth.ts` (`extractFrameAuth`), `frameVerify.ts` (`verifyFrameToken` — DI, отдаёт
