@@ -1,0 +1,50 @@
+<script setup lang="ts">
+import { usePageStore } from '~/stores/page'
+import BtnSpinnerIcon from '@bitrix24/b24icons-vue/button-specialized/BtnSpinnerIcon'
+
+// region Init ////
+useHead({
+  bodyAttrs: {
+    class: `light`
+  }
+})
+
+const slots = defineSlots()
+
+const page = usePageStore()
+useSeoMeta({
+  title: page.title,
+  description: page.description
+})
+// endregion ////
+</script>
+
+<template>
+  <B24SidebarLayout
+    :use-light-content="false"
+    :b24ui="{
+      root: '',
+      container: 'mt-[20px]'
+    }"
+  >
+    <div v-if="page.isLoading">
+      <div class="cursor-wait isolate absolute z-1000 inset-0 w-full flex flex-row flex-nowrap items-center justify-center h-[400px] min-h-[400px]">
+        <BtnSpinnerIcon
+          class="text-(--ui-color-design-plain-content-icon-secondary) size-[110px] animate-spin-slow"
+          aria-hidden="true"
+        />
+      </div>
+    </div>
+
+    <!-- Header -->
+
+    <!-- Content -->
+    <div v-show="!page.isLoading">
+      <slot />
+    </div>
+
+    <template v-if="!!slots['footer'] && !page.isLoading" #content-bottom>
+      <slot name="footer" />
+    </template>
+  </B24SidebarLayout>
+</template>
