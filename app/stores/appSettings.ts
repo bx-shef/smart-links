@@ -1,6 +1,6 @@
 import type { B24Frame, TypeEnumAppStatus } from '@bitrix24/b24jssdk'
 import type { UfSmartLinkType } from '#shared/types/base'
-import { EnumCrmEntityTypeId } from '@bitrix24/b24jssdk'
+import { EnumCrmEntityTypeId, Type } from '@bitrix24/b24jssdk'
 
 /**
  * Some info about App
@@ -18,100 +18,10 @@ export const useAppSettingsStore = defineStore(
     const status = ref<TypeEnumAppStatus>('Free')
     const isTrial = ref(true)
     /**
-     * @todo edit the config here (hardcoded until the settings UI lands; see docs/PROJECT_MAP.md)
+     * Map of ufCode -> config. Populated from portal app options via initFromBatch();
+     * edited through the settings slider (slider/app-options). No portal-specific defaults.
      */
-    const configUfListSettings = reactive<UfListConfigType>({
-      UF_CRM_DEAL_FIZ_DOGOVOR_GETTER: {
-        ufDestination: 'ufCrmDealDogovor',
-        orign: {
-          clientFields: {
-            companyId: 'companyId',
-            contactId: 'contactId',
-            myCompanyId: undefined,
-            dogovorId: undefined
-          },
-          isFilterBy: {
-            company: false,
-            contact: true,
-            myCompany: false,
-            dogovor: false
-          },
-        },
-        target: {
-          entityMode: 'lists',
-          entityTypeId: 41, // iblock id
-          customFilter: {
-            'PROPERTY_RAZOVYY': false
-          },
-          clientFields: {
-            companyId: 'PROPERTY_175', // CLIENT
-            contactId: 'PROPERTY_175', // CLIENT
-            myCompanyId: undefined,
-            dogovorId: undefined
-          }
-        }
-      },
-      UF_CRM_DEAL_UR_DOGOVOR_GETTER: {
-        ufDestination: 'ufCrmDealDogovor',
-        orign: {
-          clientFields: {
-            companyId: 'companyId',
-            contactId: 'contactId',
-            myCompanyId: undefined,
-            dogovorId: undefined
-          },
-          isFilterBy: {
-            company: true,
-            contact: false,
-            myCompany: false,
-            dogovor: false
-          },
-        },
-        target: {
-          entityMode: 'lists',
-          entityTypeId: 41, // iblock id
-          customFilter: {
-            'PROPERTY_RAZOVYY': false
-          },
-          clientFields: {
-            companyId: 'PROPERTY_175', // CLIENT
-            contactId: 'PROPERTY_175', // CLIENT
-            myCompanyId: undefined,
-            dogovorId: undefined
-          }
-        }
-      },
-      UF_CRM_DEAL_DEV_FIZ_DOGOVOR_GETTER: {
-        ufDestination: 'ufCrmDealDogovor',
-        orign: {
-          clientFields: {
-            companyId: 'companyId',
-            contactId: 'contactId',
-            myCompanyId: undefined,
-            dogovorId: undefined
-          },
-          isFilterBy: {
-            company: false,
-            contact: true,
-            myCompany: false,
-            dogovor: false
-          },
-        },
-        target: {
-          entityMode: 'lists',
-          entityTypeId: 41, // iblock id
-          customFilter: {
-            'PROPERTY_RAZOVYY': false
-          },
-          clientFields: {
-            companyId: 'PROPERTY_175', // CLIENT
-            contactId: 'PROPERTY_175', // CLIENT
-            myCompanyId: undefined,
-            dogovorId: undefined
-          }
-        }
-      }
-    })
+    const configUfListSettings = reactive<UfListConfigType>({})
     // endregion ////
 
     // region Actions ////
@@ -167,12 +77,9 @@ export const useAppSettingsStore = defineStore(
         version.value = data.version
       }
 
-      /**
-       * @memo uncomment once the settings page is implemented
-       */
-      // if (data.configUfListSettings) {
-      //   Object.assign(configUfListSettings, data.configUfListSettings)
-      // }
+      if (data.configUfListSettings && Type.isPlainObject(data.configUfListSettings)) {
+        Object.assign(configUfListSettings, data.configUfListSettings)
+      }
     }
 
     /**
