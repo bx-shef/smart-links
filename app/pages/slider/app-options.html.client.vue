@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import type { B24Frame } from '@bitrix24/b24jssdk'
 import type { UfSmartLinkType } from '#shared/types/base'
-import { ref, onMounted, onUnmounted, computed } from 'vue'
+import { ref, onMounted, onUnmounted, computed, watch } from 'vue'
 import { EnumCrmEntityTypeId, AjaxError, Type } from '@bitrix24/b24jssdk'
 import { usePageStore } from '~/stores/page'
 import { useUserStore } from '~/stores/user'
@@ -50,6 +50,12 @@ const customFilterText = ref('{}')
 const entityModeItems = computed(() => [
   { label: t('page.app-options.form.entityMode.crm'), value: 'crm' },
   { label: t('page.app-options.form.entityMode.lists'), value: 'lists' }
+])
+
+// CRM targets are constrained to the entity types the path resolvers support
+// (see appSettings.getTargetPath). Currently only Deal.
+const crmTypeItems = computed(() => [
+  { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal }
 ])
 // endregion ////
 
@@ -105,6 +111,18 @@ function loadData() {
     : createEmptyConfig()
 
   customFilterText.value = JSON.stringify(ufSmartLink.value.target.customFilter ?? {}, null, 2)
+}
+
+// Reset entityTypeId to a mode-appropriate default when the admin switches modes,
+// so a leftover value (e.g. a Deal id) is not saved as a list iblock id.
+// Registered after loadData() so it never fires for the initial (loaded) value.
+function setupEntityModeWatch() {
+  watch(
+    () => ufSmartLink.value.target.entityMode,
+    (mode) => {
+      ufSmartLink.value.target.entityTypeId = mode === 'crm' ? EnumCrmEntityTypeId.deal : 0
+    }
+  )
 }
 
 async function makeSave() {
@@ -211,6 +229,7 @@ onMounted(async () => {
     startPullClient()
 
     loadData()
+    setupEntityModeWatch()
   } catch (error) {
     processErrorGlobal(error, {
       homePageIsHide: true,
@@ -266,7 +285,15 @@ onUnmounted(() => {
         :error="errors.entityTypeId"
         required
       >
-        <B24InputNumber v-model="ufSmartLink.target.entityTypeId" class="w-full" />
+        <B24Select
+          v-if="ufSmartLink.target.entityMode === 'crm'"
+          v-model="ufSmartLink.target.entityTypeId"
+          :items="crmTypeItems"
+          value-key="value"
+          label-key="label"
+          class="w-full"
+        />
+        <B24InputNumber v-else v-model="ufSmartLink.target.entityTypeId" class="w-full" />
       </B24FormField>
 
       <B24FormField

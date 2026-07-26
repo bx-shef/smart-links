@@ -83,7 +83,10 @@ export const useAppSettingsStore = defineStore(
     }
 
     /**
-     * Save settings to Bitrix24
+     * Save settings to Bitrix24.
+     * App options are stored as strings, so the config map is JSON-encoded and sent under
+     * the documented `{ options }` signature (mirrors @bitrix24/b24jssdk OptionsManager,
+     * which reads it back via getJsonObject). Live-portal round-trip: see docs/PROJECT_MAP.md.
      */
     const saveSettings = async () => {
       if ($b24 === null) {
@@ -94,7 +97,9 @@ export const useAppSettingsStore = defineStore(
       return $b24.callMethod(
         'app.option.set',
         {
-          configUfListSettings: JSON.parse(JSON.stringify(configUfListSettings))
+          options: {
+            configUfListSettings: JSON.stringify(configUfListSettings)
+          }
         }
       )
     }
