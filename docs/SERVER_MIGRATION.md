@@ -55,6 +55,15 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 
 ## Прогресс
 
+- **S2a (верификация фрейм-токена) — сделано:** порт чистого ядра из эталона —
+  `server/utils/b24Rest.ts` (SSRF-гард `isSafeB24Domain`, `normaliseHost`, `isAuthRejection`),
+  `frameAuth.ts` (`extractFrameAuth`), `frameVerify.ts` (`verifyFrameToken` — DI, отдаёт
+  `{ok, admin, host}`), живой транспорт `b24BareToken.ts` (guarded raw-fetch вместо SDK, т.к.
+  b24jssdk 0.4.x). Тесты на чистое ядро. **Ключ рейтинга — `host` (нормализованный домен),
+  доказанный токеном.** `member_id` недоступен до OAuth (S4) — как в эталоне (`resolveFrameMember`
+  = `verifyFrameToken` + маппинг домен→member_id из token-store, который наполняет только install).
+  Store фазы S2 проектируем по обобщённому ключу (`portal_key TEXT` = host сейчас, member_id после
+  S4) — смена источника без миграции схемы.
 - **S1 (каркас) — сделано:** Nitro-сервер, `server/api/health` (чистый `healthInfo` из
   `app/utils/build` + тесты), served-сборка `pnpm build` (preset node-server) проверена локально —
   `node .output/server/index.mjs` отдаёт `/…/api/health` → `{status:'ok',commit,commitUrl,time}`.
