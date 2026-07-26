@@ -26,7 +26,7 @@ const makeOpenFeedBack = async() => {
       {
         place: 'feedback',
         bx24_width: 600,
-        bx24_title: t('page.base_feedback.seo.title'),
+        bx24_title: t('page.feedback.seo.title'),
       }
     )
   } catch (error) {
