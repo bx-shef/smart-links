@@ -28,29 +28,38 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 | S1 | Серверный каркас: Nitro, `server/api/health`, served-сборка (`nuxt build`, preset node-server), публичный лендинг-маршрут, in-portal остаётся client-only | #15 | TODO |
 | S2 | Рейтинг на сервере: `server/api/app-rating` (get/post), фрейм-токен → `member_id`, хранилище per-member (лёгкое), чистая `shouldPrompt`; клиент берёт решение с сервера | #16 | TODO |
 | S3 | Деплой в Black Hole: `DEPLOY_VIBECODE.md` + `deploy/vibecode-deploy.sh` + opt-in workflow + edge-security паритет + env | #17 | TODO |
-| S4 | (опц.) Market OAuth: install/uninstall + токены — только для облачной multi-tenant публикации | #18 | TODO |
+| S4 | Market OAuth: install/uninstall-события + хранилище токенов (Postgres) — облачное multi-tenant приложение, как эталон | #18 | TODO |
 
-## Решения (по умолчанию — «чуть усложним»)
+## Решения (полный паритет эталона)
 
-- **Auth:** фрейм-токен для in-portal (уже работает на клиенте; сервер верифицирует его через REST
-  портала). Полный OAuth — отдельная фаза S4, только при облачной публикации.
-- **Хранилище рейтинга (S2):** лёгкое, per-`member_id` (напр. SQLite-файл на VM или KV) — не тянем
-  Postgres ради одной таблицы. Эталон использует Postgres; вернёмся к нему, если появится больше
-  серверного состояния (S4/токены).
-- **Сборка:** `nuxt build` (node-server) вместо `nuxt generate`. Архивная упаковка (`tools/`)
-  остаётся доступной для локального-приложения-фолбэка, но основной путь — served-процесс.
-- **Лендинг:** маршрут в served-приложении (SSR/пререндер), in-portal-страницы — по-прежнему
-  client-only (`*.html.client.vue`).
+Владелец: «смотри репо примера — там всё сделано» (2026-07-26). Значит идём по эталону
+`ai-price-import` **полностью**:
+
+- **Auth:** фрейм-токен для in-portal-роутов (`resolveFrameMember` → `member_id`, порт из эталона)
+  **и** полный **OAuth** для облачного Market-приложения (install/uninstall-события, хранилище
+  токенов) — фаза S4 включена в план, не опциональна.
+- **Хранилище:** **Postgres** (как эталон): токены порталов, состояние рейтинга (`portal_app_rating`
+  по `member_id`), тумбстоуны и т.п. На Black Hole VM провижнится в `preStart` (как эталон).
+- **Сборка:** `nuxt build` (preset node-server). Архивная упаковка (`tools/`) остаётся как
+  фолбэк локального приложения, но основной путь — served-процесс.
+- **Лендинг:** маршрут в served-приложении; in-portal-страницы — client-only (`*.html.client.vue`).
+- **Edge-security:** паритет из эталона (`APP_EDGE_SECURITY`: CSP + `frame-ancestors` доменов Б24,
+  анти-брутфорс, body-size) — на фазе S3.
 
 ## Что переиспользуем из уже сделанного
 
-- `app/utils/appRating.ts` (`shouldPromptRating`) — переносим в `server/utils` или общий `shared/`
-  и переиспользуем на сервере (то же чистое решение, `now` инъектируется).
+- `app/utils/appRating.ts` (`shouldPromptRating`) → переносим в `server/utils` (чистое решение,
+  `now` инъектируется) — как `appRatingPolicy.ts` в эталоне.
 - `marketDetailPath`, `NUXT_PUBLIC_B24_MARKET_CODE` — остаются; клиент открывает Маркет по решению
-  сервера.
+  **сервера** (get `/api/app-rating`).
 
-## Открытые вопросы
+## Живые проверки на тест-портале
 
-- Точный формат хранилища S2 (SQLite vs файловый KV) — уточнить под провижн Black Hole VM.
-- Нужна ли облачная Market-публикация с OAuth (S4) сейчас или позже.
-- Edge-security паритет (CSP/`frame-ancestors` доменов Б24) — портируем из эталона на фазе S3.
+Тест-портал через вебхук (`.env.b24test`, `B24_HOOK`, **в репозиторий не коммитим**). Установлено:
+
+- `app.option.*` / `user.option.*` / `userfieldtype.*` — **требуют контекст приложения**, через
+  вебхук недоступны (`ACCESS_DENIED: Application context required`) → проверяемы только во фрейме
+  приложения. Поэтому серверный рейтинг хранит состояние **в своей БД** (Postgres), а не в
+  `app.option`/`user.option`.
+- `crm.item.list` / `lists.*` через вебхук работают → используем для проверок REST-фактов.
+- REST-факты Bitrix24 сверяем на этом портале, а не по памяти.
