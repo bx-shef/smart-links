@@ -17,6 +17,9 @@ useHead({
 const { initApp, b24Helper, processErrorGlobal } = useAppInit('IndexPage')
 const { $initializeB24Frame } = useNuxtApp()
 let $b24: null | B24Frame = null
+
+// Rating prompt (inert unless NUXT_PUBLIC_B24_MARKET_CODE is set).
+const { isEnabled: isRatingEnabled, isOpen: isRatingOpen, maybePrompt, openMarket, markReviewed, dismiss } = useAppRating()
 // endregion ////
 
 // region Actions ////
@@ -53,6 +56,15 @@ onMounted(async () => {
     await initApp($b24, localesI18n, setLocale)
 
     await $b24.parent.setTitle(t('page.index.seo.title'))
+
+    // Rating prompt is best-effort — its failure must not crash the page.
+    if (isRatingEnabled) {
+      try {
+        await maybePrompt($b24, b24Helper.value?.userOptions)
+      } catch (error) {
+        console.error('appRating: prompt failed', error)
+      }
+    }
   } catch (error) {
     processErrorGlobal(error, {
       homePageIsHide: true,
@@ -91,5 +103,13 @@ onUnmounted(() => {
         @click.stop="makeOpenDealUfList"
       />
     </div>
+
+    <AppRatingModal
+      v-if="isRatingEnabled"
+      v-model:open="isRatingOpen"
+      @rate="openMarket"
+      @reviewed="markReviewed"
+      @later="dismiss"
+    />
   </AdviceCenter>
 </template>
