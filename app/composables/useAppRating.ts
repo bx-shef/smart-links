@@ -25,10 +25,15 @@ export function useAppRating() {
     if (!$b24) {
       return
     }
+    // Best-effort: a failed rating save must never bubble up (it's not critical).
     // User options are stored as JSON strings (see @bitrix24/b24jssdk OptionsManager).
-    await $b24.callMethod('user.option.set', {
-      options: { [OPTION_KEY]: JSON.stringify(state) }
-    })
+    try {
+      await $b24.callMethod('user.option.set', {
+        options: { [OPTION_KEY]: JSON.stringify(state) }
+      })
+    } catch (error) {
+      console.error('appRating: failed to persist state', error)
+    }
   }
 
   /**
@@ -45,7 +50,12 @@ export function useAppRating() {
     }
     $b24 = b24
 
-    const raw = userOptions?.getJsonObject?.(OPTION_KEY)
+    let raw: unknown
+    try {
+      raw = userOptions?.getJsonObject?.(OPTION_KEY)
+    } catch {
+      raw = undefined
+    }
     state = Type.isPlainObject(raw) ? (raw as AppRatingState) : {}
 
     if (!shouldPromptRating(state, { now: Date.now() })) {
@@ -59,12 +69,17 @@ export function useAppRating() {
 
   /** "Rate" — record the click and open the Market detail page in a slider. */
   async function openMarket() {
-    if ($b24 && marketPath) {
-      state = { ...state, openedAt: Date.now() }
-      await persist()
-      await $b24.slider.openPath($b24.slider.getUrl(marketPath), 950)
-    }
     isOpen.value = false
+    if (!$b24 || !marketPath) {
+      return
+    }
+    state = { ...state, openedAt: Date.now() }
+    await persist()
+    try {
+      await $b24.slider.openPath($b24.slider.getUrl(marketPath), 950)
+    } catch (error) {
+      console.error('appRating: failed to open the Market page', error)
+    }
   }
 
   /** "Already rated" — terminal, never prompt again. */

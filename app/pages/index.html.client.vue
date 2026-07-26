@@ -57,8 +57,13 @@ onMounted(async () => {
 
     await $b24.parent.setTitle(t('page.index.seo.title'))
 
+    // Rating prompt is best-effort — its failure must not crash the page.
     if (isRatingEnabled) {
-      await maybePrompt($b24, b24Helper.value?.userOptions)
+      try {
+        await maybePrompt($b24, b24Helper.value?.userOptions)
+      } catch (error) {
+        console.error('appRating: prompt failed', error)
+      }
     }
   } catch (error) {
     processErrorGlobal(error, {

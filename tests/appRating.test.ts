@@ -33,6 +33,10 @@ describe('shouldPromptRating', () => {
   it('prompts again after the opened-quiet window', () => {
     expect(shouldPromptRating({ openedAt: NOW - 40 * DAY }, { now: NOW })).toBe(true)
   })
+
+  it('respects a custom openedQuietDays', () => {
+    expect(shouldPromptRating({ openedAt: NOW - 40 * DAY }, { now: NOW, openedQuietDays: 60 })).toBe(false)
+  })
 })
 
 describe('marketDetailPath', () => {
