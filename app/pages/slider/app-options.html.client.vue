@@ -60,10 +60,12 @@ function loadData() {
 
   $logger.info('Hi from app-options', $b24?.placement)
 
-  if (!Type.isNull(appSettings.configUfListSettings[ufCode.value])) {
-    ufSmartLink.value = appSettings.configUfListSettings[ufCode.value] as UfSmartLinkType
+  // A missing ufCode yields `undefined` (not `null`), so guard on presence of a
+  // plain-object config; otherwise seed a fresh, type-correct config.
+  const existing = appSettings.configUfListSettings[ufCode.value]
+  if (Type.isPlainObject(existing)) {
+    ufSmartLink.value = existing as UfSmartLinkType
   } else {
-    // @memo тут иницируем новое
     ufSmartLink.value = {
       ufDestination: '',
       orign: {
@@ -218,9 +220,9 @@ onUnmounted(() => {
           root: 'light',
           item: 'mb-[16px] last:mb-0 bg-(--ui-color-bg-content-primary) rounded-(--ui-border-radius-md) border-b-0',
           trigger: 'py-[20px] px-[20px]',
-          label: 'text-(length:--ui-font-size-2xl) text-(-ui-color-text-primary)',
+          label: 'text-(length:--ui-font-size-2xl) text-(--ui-color-text-primary)',
           leadingIcon: 'text-(--ui-color-base-60)',
-          trailingIcon: 'text-(-ui-color-text-primary)',
+          trailingIcon: 'text-(--ui-color-text-primary)',
         }"
     >
       <template #target>

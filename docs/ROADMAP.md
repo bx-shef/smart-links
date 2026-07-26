@@ -21,7 +21,7 @@
 |---|------|-----------|--------|
 | 1 | Порт приложения | Код `smart-link` в репо, чистка следов портала, lint-чисто, сборка | DONE |
 | 2 | Каркас проекта | CLAUDE.md, docs, CI, dependabot, `.claude`-хуки, README | DONE |
-| 3 | Фундамент качества | Vitest (unit), typecheck, `pnpm check`, CI-барьер (lint+typecheck+test+build) | DONE |
+| 3 | Фундамент качества | Vitest (unit), typecheck, `pnpm check`, CI-барьер (lint+typecheck+test+generate) | DONE |
 | 4 | Тесты — расширение | `nuxt`-проект Vitest (компоненты/страницы), вынести чистую логику из страниц в `utils`+тесты | WIP |
 | 5 | Страница настроек поля | Рабочий редактор `UfSmartLinkType` (b24ui), загрузка конфига из опций, убрать захардкоженный конфиг | TODO |
 | 6 | Попап «оцените приложение» | Клиентский `AppRatingModal` (состояние в `app.option`, троттлинг, `openPath` в Маркет) | TODO |

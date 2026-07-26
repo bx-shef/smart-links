@@ -35,9 +35,10 @@ export function chunkProductsList<T>(
   let currentPage = 0
   const pageItems: T[][] = []
 
-  if (productsCollection.length > (perPageMap.first + fix)) {
-    perPageMap.first += fix
-  }
+  // Do not mutate the caller's perPageMap; compute the first-page size locally.
+  const firstSize = productsCollection.length > (perPageMap.first + fix)
+    ? perPageMap.first + fix
+    : perPageMap.first
 
   let iterator = 0
   for (const product of productsCollection) {
@@ -46,7 +47,7 @@ export function chunkProductsList<T>(
     iterator++
 
     if (currentPage === 0) {
-      if (iterator >= perPageMap.first) {
+      if (iterator >= firstSize) {
         currentPage++
         iterator = 0
       }
