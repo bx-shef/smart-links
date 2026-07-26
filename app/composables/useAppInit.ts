@@ -53,7 +53,6 @@ export const useAppInit = (loggerTitle?: string) => {
       [
         LoadDataType.App,
         LoadDataType.AppOptions,
-        LoadDataType.UserOptions,
         LoadDataType.Profile
       ]
     )

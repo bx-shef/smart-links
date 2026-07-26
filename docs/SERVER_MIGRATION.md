@@ -55,6 +55,14 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 
 ## Прогресс
 
+- **S2 — ЗАВЕРШЕНА (S2a–S2d):** полный серверный контур рейтинга. **S2c** — роуты
+  `server/api/app-rating.get/post` (фрейм-токен → host, `{show}` / `prompted`|`opened`; без БД —
+  инертно). **S2d** — клиент `useAppRating` берёт решение показа с **сервера** (`GET /api/app-rating`
+  с фрейм-заголовками через `$b24.auth.getAuthData()`), пишет lifecycle (`prompted`/`opened`) POST'ом,
+  открывает Маркет `slider.openPath`. Чистый `app/utils/frameHeaders.ts` (+тесты). Клиентские
+  `user.option`-запись и `shouldPromptRating` удалены (`marketDetailPath` оставлен). `AppRatingModal`/
+  i18n сохранены. Инертность: сервер `{show:false}` (нет БД/троттл/не в портале) или пустой
+  `NUXT_PUBLIC_B24_MARKET_CODE` → модалка не всплывает.
 - **S2b (DB-слой рейтинга) — сделано:** чистые ядра `server/utils/appRatingPolicy.ts`
   (`shouldPrompt`, Date-based) и `server/utils/appRatingStore.ts` (DI над `QueryFn`,
   get/markPrompted/markOpened/markReviewed/clearOpened; ключ `portal_key`) — тесты фейком.

@@ -57,10 +57,11 @@ onMounted(async () => {
 
     await $b24.parent.setTitle(t('page.index.seo.title'))
 
-    // Rating prompt is best-effort — its failure must not crash the page.
+    // Rating prompt is best-effort — its failure must not crash the page. The show decision
+    // is made server-side (GET /api/app-rating); inert without a portal / DB / Market code.
     if (isRatingEnabled) {
       try {
-        await maybePrompt($b24, b24Helper.value?.userOptions)
+        await maybePrompt($b24)
       } catch (error) {
         console.error('appRating: prompt failed', error)
       }
