@@ -1,0 +1,14 @@
+@import "tailwindcss";
+@import "@bitrix24/b24ui-nuxt";
+
+/*
+ * Custom bg
+ */
+@layer base {
+  /*
+    .light,
+    :root {
+      --air-theme-bg-color: #eef2f4;
+    }
+  */
+}
