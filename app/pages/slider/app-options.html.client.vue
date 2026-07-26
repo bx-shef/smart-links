@@ -66,9 +66,7 @@ function loadData() {
     // @memo тут иницируем новое
     ufSmartLink.value = {
       ufDestination: '',
-      target: {
-        entityTypeId: EnumCrmEntityTypeId.deal,
-        customFilter: {},
+      orign: {
         clientFields: {
           companyId: 'companyId',
           contactId: 'contactId',
@@ -80,6 +78,17 @@ function loadData() {
           contact: false,
           myCompany: false,
           dogovor: false
+        }
+      },
+      target: {
+        entityMode: 'crm',
+        entityTypeId: EnumCrmEntityTypeId.deal,
+        customFilter: {},
+        clientFields: {
+          companyId: 'companyId',
+          contactId: 'contactId',
+          myCompanyId: undefined,
+          dogovorId: undefined
         }
       }
     }

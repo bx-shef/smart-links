@@ -42,7 +42,9 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
 pnpm dev          # дев-сервер
 pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
-pnpm typecheck    # nuxt prepare + vue-tsc (после добавления скрипта, см. docs/PROJECT_MAP.md G7/G8)
+pnpm typecheck    # nuxt prepare + vue-tsc
+pnpm test         # Vitest (unit)
+pnpm check        # lint + typecheck + test
 pnpm generate     # SSG-сборка в .output/public
 pnpm generate-archive-for-b24  # generate → fix-paths → create-archive (архив для портала)
 pnpm translate-ui # оффлайн-перевод локалей (нужен DEEPSEEK_API_KEY)

@@ -1,6 +1,5 @@
-# CI for SmartLinks (Nuxt 4 client-only app). Runs the lint gate + SSG build so a broken
-# build or lint regression can't reach main. Typecheck/tests are added with docs/PROJECT_MAP.md
-# G7/G8 (Vitest + a `typecheck` script) and wired in here at that point.
+# CI for SmartLinks (Nuxt 4 client-only app). Runs the full check gate
+# (lint + typecheck + test) + SSG build so a regression can't reach main.
 name: CI
 
 on:
@@ -26,5 +25,7 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
       # SSG build: validates the app compiles and generates static output.
       - run: pnpm generate
