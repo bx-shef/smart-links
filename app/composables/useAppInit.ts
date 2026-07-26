@@ -76,7 +76,8 @@ export const useAppInit = (loggerTitle?: string) => {
     appSettings.initFromBatch({
       version: (data.appInfo?.data.version ?? 1),
       status: data.appInfo?.data.status,
-      configUfListSettings: (data.appSettings?.data ?? new Map()).get('configUfListSettings')
+      // App options are stored as JSON strings; getJsonObject parses them (default {}).
+      configUfListSettings: data.appSettings?.getJsonObject('configUfListSettings')
     })
 
     $logger.info('InitApp stop')
@@ -114,7 +115,7 @@ export const useAppInit = (loggerTitle?: string) => {
 
     // Update stores with received data
     appSettings.initFromBatch({
-      configUfListSettings: (data.appSettings?.data ?? new Map()).get('configUfListSettings')
+      configUfListSettings: data.appSettings?.getJsonObject('configUfListSettings')
     })
 
     $logger.info('reloadData stop')
