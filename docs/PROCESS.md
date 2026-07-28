@@ -2,12 +2,13 @@
 
 > Last reviewed: 2026-07-28
 
-Приложение Bitrix24 «Умные ссылки». Издатель — ИП Шевчик И.С. Это **клиентское**
-(`ssr: false`) Nuxt 4-приложение, которое собирается в статику и упаковывается в
-**архив** для загрузки в портал как локальное/маркет-приложение. Весь код исполняется
-**внутри iframe портала** (обёртка `@bitrix24/b24jssdk` → `B24Frame`); своего сервера/БД у
-приложения нет — состояние хранится в опциях приложения на стороне портала
-(`app.option.*`), обмен в реальном времени — через pull.
+Приложение Bitrix24 «Умные ссылки». Издатель — ИП Шевчик И.С. **Nuxt 4 + Nitro**: один
+процесс отдаёт публичный лендинг (`/`), in-portal-страницы и `/api/*`. Все маршруты
+**пререндерятся** в реальный HTML, а Bitrix24-фрейм поднимается **на клиенте** — поэтому
+in-portal-код исполняется **внутри iframe портала** (обёртка `@bitrix24/b24jssdk` →
+`B24Frame`): настройки поля хранятся в опциях приложения на стороне портала
+(`app.option.*`), обмен в реальном времени — через pull. Серверная часть держит состояние
+попапа оценки в Postgres (без `DATABASE_URL` — инертна). Упаковка в архив — легаси-фолбэк.
 
 ## Суть продукта
 
@@ -43,7 +44,8 @@ CRM-сущности требуют расширения резолверов.
 - `public/` — статика (аватары советника, favicon, robots).
 - `tools/` — оффлайн-инструменты: перевод локалей и упаковка архива для B24.
 - `template/` — HTML-шаблон загрузчика dev-сервера.
-- `server/tsconfig.json` — только конфиг типов (полноценного сервера у приложения нет).
+- `server/` — Nitro: `api/` (`health`, `app-rating` get/post), `utils/` (верификация фрейм-токена,
+  политика и хранилище рейтинга), `db/` (`pg`-пул, схема `app_rating`), `plugins/migrate.ts`.
 
 ## Страницы и роли
 
@@ -167,7 +169,7 @@ CRM-сущности требуют расширения резолверов.
 
 ```bash
 pnpm build                    # served-сборка (preset node-server)
-node .output/server/index.mjs # запуск: /, /app.html, /install.html, /api/health, /api/app-rating
+node .output/server/index.mjs # /, /app, /install, /handler/uf.smart-link, /slider/*, /api/*
 ```
 
 ⚠ **Пути приложения в настройках портала:** путь приложения — `https://<host>/app`,
@@ -188,7 +190,7 @@ pnpm generate-archive-for-b24  # generate → fix-paths → create-archive
 
 ## Стек
 
-Nuxt 4 (`ssr: false`), `@bitrix24/b24ui-nuxt`, `@bitrix24/b24jssdk(-nuxt)`,
+Nuxt 4 + Nitro (пререндер маршрутов, preset `node-server`), `pg`, `@bitrix24/b24ui-nuxt`, `@bitrix24/b24jssdk(-nuxt)`,
 `@bitrix24/b24icons-vue`, `@nuxtjs/i18n`, `@pinia/nuxt`, `@unovis/vue` (графики),
 `luxon`, Tailwind CSS (через `@tailwindcss/vite`). Инструменты разработки: ESLint
 (`@nuxt/eslint`), TypeScript, `openai` + `tsx` + `consola` (для оффлайн-перевода локалей),

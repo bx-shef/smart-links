@@ -11,8 +11,8 @@
 Каркас, фундамент качества, настройки поля и публичный лендинг готовы. Серверная миграция
 (паритет эталона: Postgres + OAuth) — см. [`SERVER_MIGRATION.md`](SERVER_MIGRATION.md): **S1**
 (Nitro + served + health) и **S2** (рейтинг на сервере: фрейм-токен + Postgres + роуты + клиент)
-сделаны. Впереди: **S3** (деплой в Black Hole + edge-security + rate-limit), **S4** (OAuth),
-плюс SSR лендинга для SEO.
+сделаны, лендинг с пререндером — тоже. Впереди: **S3** (деплой в Black Hole + edge-security +
+rate-limit) и **S4** (OAuth).
 
 ## Легенда статусов
 
@@ -27,8 +27,8 @@
 | 3 | Фундамент качества | Vitest (unit), typecheck, `pnpm check`, CI-барьер (lint+typecheck+test+generate) | DONE |
 | 4 | Тесты — расширение | `nuxt`-проект Vitest (компоненты/страницы), вынести чистую логику из страниц в `utils`+тесты | WIP |
 | 5 | Страница настроек поля | Рабочий редактор `UfSmartLinkType` (b24ui), загрузка конфига из опций, убрать захардкоженный конфиг | DONE |
-| 6 | Попап «оцените приложение» | Клиентский `AppRatingModal` (per-user состояние в `user.option`, троттлинг, `openPath` в Маркет). Инертен, пока не задан `NUXT_PUBLIC_B24_MARKET_CODE` | DONE |
-| 7 | Лендинг | Маркетинговая страница на `/` (`baseURL` снят, in-portal сохраняет `*.html`) | DONE (SSR для SEO — след. инкремент) |
+| 6 | Попап «оцените приложение» | `AppRatingModal`; решение показа — **на сервере** (`/api/app-rating`, фрейм-токен, Postgres, троттлинг), клиент открывает Маркет. Инертен без БД / без `NUXT_PUBLIC_B24_MARKET_CODE` | DONE |
+| 7 | Лендинг | Маркетинговая страница на `/`; пути in-portal — `/app`, `/install`; все маршруты пререндерятся (лендинг индексируем) | DONE |
 | 8 | Деплой в Black Hole | `DEPLOY_VIBECODE.md` + скрипт + opt-in workflow | TODO (нужна развилка арх.) |
 | 9 | i18n-расширение | При необходимости `be`/`kk`/`en` (сейчас только `ru`) | TODO |
 

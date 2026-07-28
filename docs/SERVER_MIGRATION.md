@@ -25,8 +25,9 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 
 | Фаза | Что | Задача | Статус |
 |---|---|---|---|
-| S1 | Серверный каркас: Nitro, `server/api/health`, served-сборка (`nuxt build`, preset node-server), публичный лендинг-маршрут, in-portal остаётся client-only | #15 | TODO |
-| S2 | Рейтинг на сервере: `server/api/app-rating` (get/post), фрейм-токен → `member_id`, хранилище per-member (лёгкое), чистая `shouldPrompt`; клиент берёт решение с сервера | #16 | TODO |
+| S1 | Серверный каркас: Nitro, `server/api/health`, served-сборка (`nuxt build`, preset node-server), публичный лендинг-маршрут | #15 | **DONE** |
+| S2 | Рейтинг на сервере: `server/api/app-rating` (get/post), фрейм-токен → `host`, Postgres `app_rating`, чистая `shouldPrompt`; клиент берёт решение с сервера | #16 | **DONE** |
+| Лендинг | Публичная страница на `/`, пререндер (SEO), пути `/app`+`/install` | #11 | **DONE** |
 | S3 | Деплой в Black Hole: `DEPLOY_VIBECODE.md` + `deploy/vibecode-deploy.sh` + opt-in workflow + edge-security паритет + env | #17 | TODO |
 | S4 | Market OAuth: install/uninstall-события + хранилище токенов (Postgres) — облачное multi-tenant приложение, как эталон | #18 | TODO |
 

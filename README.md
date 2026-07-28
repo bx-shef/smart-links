@@ -26,12 +26,26 @@ cp .env.example .env      # заполнить NUXT_PUBLIC_B24_FORM_* (обра�
 pnpm dev                  # дев-сервер (для работы внутри портала нужен туннель, см. NUXT_ALLOWED_HOSTS)
 ```
 
-## Сборка архива для портала
+## Деплой (основной путь — served-процесс)
+
+```bash
+pnpm build                    # сборка Nitro (preset node-server) + пререндер маршрутов
+node .output/server/index.mjs # отдаёт /, /app, /install, /handler/…, /slider/…, /api/*
+```
+
+Пути приложения в настройках портала: **`https://<host>/app`** (приложение) и
+**`https://<host>/install`** (установка). Корень домена — публичный лендинг, он намеренно не
+инициализирует B24-фрейм. ⚠ При смене адресов приложение нужно **переустановить**: URL
+обработчика UF-типа регистрируется на установке.
+
+### Архивная упаковка (легаси-фолбэк)
 
 ```bash
 pnpm generate-archive-for-b24   # generate → fix-paths → create-archive
-# итог: .output/archiverForB24.zip — загрузить как локальное/маркет-приложение Bitrix24
 ```
+
+⚠ `tools/fix-paths.mjs` сейчас **инертен** (ищет маркер `dev-folder`, которого сборка не
+производит) — архивный путь требует починки и проверки на живом портале.
 
 ## Скоупы Bitrix24
 
@@ -39,8 +53,9 @@ pnpm generate-archive-for-b24   # generate → fix-paths → create-archive
 
 ## Стек
 
-Nuxt 4 (`ssr: false`), `@bitrix24/b24ui-nuxt`, `@bitrix24/b24jssdk(-nuxt)`, `@nuxtjs/i18n`,
-`@pinia/nuxt`, `@unovis/vue`, Tailwind CSS. Пакетный менеджер — pnpm.
+Nuxt 4 + Nitro (пререндер маршрутов, preset `node-server`), `pg`, `@bitrix24/b24ui-nuxt`,
+`@bitrix24/b24jssdk(-nuxt)`, `@nuxtjs/i18n`, `@pinia/nuxt`, `@unovis/vue`, Tailwind CSS.
+Пакетный менеджер — pnpm.
 
 ## Лицензия
 

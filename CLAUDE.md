@@ -49,6 +49,7 @@ pnpm lint:fix     # ESLint --fix
 pnpm typecheck    # nuxt prepare + vue-tsc
 pnpm test         # Vitest (unit)
 pnpm check        # lint + typecheck + test
+pnpm build        # served-сборка (Nitro, preset node-server) + пререндер — основной путь деплоя
 pnpm generate     # SSG-сборка в .output/public
 pnpm generate-archive-for-b24  # generate → fix-paths → create-archive (архив для портала)
 pnpm translate-ui # оффлайн-перевод локалей (нужен DEEPSEEK_API_KEY)
@@ -73,10 +74,10 @@ pnpm translate-ui # оффлайн-перевод локалей (нужен DEE
 > (S4). Заметки ниже описывают исходную клиентскую модель; серверная часть работает и **без БД**
 > (роуты рейтинга инертны без `DATABASE_URL`).
 
-- **Клиентское приложение внутри портала.** Нет сервера, БД, OAuth-бэкенда. Авторизация — на
-  стороне портала; фрейм получает права текущего пользователя (`Profile.isAdmin`). Секретов в
-  рантайме нет (кроме публичных `NUXT_PUBLIC_*` формы обратной связи). `DEEPSEEK_API_KEY` нужен
-  **только** оффлайн-инструменту перевода, в собранный архив не попадает.
+- **In-portal авторизация — на стороне портала**: фрейм получает права текущего пользователя
+  (`Profile.isAdmin`), сервер верифицирует фрейм-токен. OAuth пока нет (фаза S4). Клиентских
+  секретов в рантайме нет (кроме публичных `NUXT_PUBLIC_*` формы обратной связи);
+  `DEEPSEEK_API_KEY` нужен **только** оффлайн-инструменту перевода.
 - **Хранилище настроек — опции приложения портала** (`app.option.get/set`), ключ
   `configUfListSettings` (карта `ufCode → UfSmartLinkType`). Изменения раскатываются в открытые
   карточки через pull-команду `reload.options`.

@@ -14,12 +14,12 @@ export default defineNuxtConfig({
     '@pinia/nuxt'
   ],
   devtools: { enabled: false },
-  // No global baseURL: the public landing is served at '/', in-portal pages keep their own
-  // '*.html' paths, and /api/* answers without a redirect (the served/Black Hole deploy target).
-  // In-portal registration is unaffected — install.html derives the UF handler URL from
-  // window.location. NOTE: tools/fix-paths keys off a 'dev-folder' marker that the current build
-  // never emits, so it is already inert (was inert before this change too); the archive flow
-  // needs a live-portal check either way — see docs/SERVER_MIGRATION.md.
+  // No global baseURL: the public landing is served at '/', in-portal pages live at /app,
+  // /install, /handler/… and /slider/…, and /api/* answers without a redirect (the served /
+  // Black Hole deploy target). In-portal registration is unaffected — the install page derives
+  // the UF handler URL from window.location. NOTE: tools/fix-paths keys off a 'dev-folder'
+  // marker the build never emits, so it is inert; the archive flow needs its own fix + a
+  // live-portal check — see docs/SERVER_MIGRATION.md.
 
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
