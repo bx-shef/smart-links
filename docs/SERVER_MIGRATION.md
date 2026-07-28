@@ -1,6 +1,6 @@
 # Переход на серверную архитектуру (Nitro) + деплой в Black Hole
 
-> Last reviewed: 2026-07-26
+> Last reviewed: 2026-07-28
 
 Решение владельца (2026-07-26): **вариант (а)** — усложняем приложение до серверного. Приложение
 перестаёт быть только статическим архивом и получает **серверный процесс (Nitro)**, который отдаёт
@@ -12,7 +12,7 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 
 ## Принципы
 
-- **Один процесс** отдаёт всё: лендинг (`/`), in-portal (client-only страницы), `/api/*`
+- **Один процесс** отдаёт всё: лендинг (`/`), in-portal-страницы, `/api/*`
   (как в эталоне, `docs/DEPLOY_VIBECODE.md`).
 - **Авторизация in-portal — фрейм-токен** (порт `resolveFrameMember` из эталона): сервер
   верифицирует фрейм-токен вызовом REST портала (bare-token) → `member_id`. OAuth **не нужен** для
@@ -42,7 +42,7 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
   по `member_id`), тумбстоуны и т.п. На Black Hole VM провижнится в `preStart` (как эталон).
 - **Сборка:** `nuxt build` (preset node-server). Архивная упаковка (`tools/`) остаётся как
   фолбэк локального приложения, но основной путь — served-процесс.
-- **Лендинг:** маршрут в served-приложении; in-portal-страницы — client-only (`*.html.client.vue`).
+- **Лендинг:** маршрут в served-приложении на `/`; все страницы пререндерятся, фрейм — на клиенте.
 - **Edge-security:** паритет из эталона (`APP_EDGE_SECURITY`: CSP + `frame-ancestors` доменов Б24,
   анти-брутфорс, body-size) — на фазе S3.
 
@@ -55,22 +55,45 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 
 ## Прогресс
 
+- **SSR/пререндер по образцу эталона — сделано:** приведено к схеме `ai-price-import`:
+  - `ssr: false` **убран**; вместо этого `nitro.prerender.routes` перечисляет все маршруты
+    (`/`, `/app`, `/install`, `/handler/uf.smart-link`, `/slider/*`) → каждый отдаётся **реальным
+    HTML**. Лендинг теперь индексируем (проверено: `<h1>`, `<title>`, meta description в HTML;
+    8969 байт против 2362 у прежней пустой оболочки).
+  - `app.vue` — без blanket `<ClientOnly>`: только `<NuxtLayout><NuxtPage/></NuxtLayout>` + head.
+    Провайдер `<B24App>` переехал **в layout'ы** (как `clear.vue` в эталоне), поэтому лендинг его
+    не тянет.
+  - **Пути без `.html`** (как в эталоне `/app`, `/install`): страницы переименованы
+    `*.html.client.vue` → `*.vue`. HANDLER UF-типа теперь `<appUrl>handler/uf.smart-link`.
+  - Фрейм инициализируется **только на клиенте**: top-level `await $initializeB24Frame()` убран из
+    `layouts/default.vue` (резолвится по клику) и `pages/install.vue` (перенесён в `onMounted`);
+    `getBaseUrl()` (читает `window.location`) вызывается внутри шага установки.
+  - `config.b24form.ts` переведён на функцию `useB24FormConfig()` — `useRuntimeConfig()` на уровне
+    модуля ронял пререндер `/slider/feedback` (500).
+  - `robots.txt`: `Allow: /` для лендинга, `Disallow` на `/api/`, `/app`, `/install`, `/handler/`,
+    `/slider/`.
+  - Смоук served-процесса: все маршруты 200, лендинг отдаёт `<h1>` в HTML, ошибок в логе нет.
 - **Лендинг + снятие `baseURL` — сделано:** глобальный `app.baseURL: '/smart-link/'` убран →
-  публичный лендинг на `/`, in-portal-страницы сохраняют свои `*.html`-пути, `/api/*` отвечает
+  публичный лендинг на `/`, in-portal-страницы — на своих путях, `/api/*` отвечает
   **без редиректа** (закрыт follow-up S1: liveness-проба бьёт в `/api/health` → 200).
-  Безопасно: `install.html` выводит HANDLER-URL из `window.location` (самоадаптируется),
-  `tools/fix-paths` переписывает пути относительными при упаковке, `useAppRating` читает baseURL
-  динамически. Лендинг — `app/pages/index.vue` (standalone, `layout:false`), тексты в i18n,
+  Безопасно: страница установки выводит HANDLER-URL из `window.location` (самоадаптируется),
+  `useAppRating` читает baseURL динамически. ⚠ `tools/fix-paths` ищет маркер `dev-folder`,
+  которого сборка не производит → утилита **инертна** (была инертна и до этой правки, т.к. не
+  совпадала и с `/smart-link/`); архивный путь требует починки и живой проверки отдельно. Лендинг — `app/pages/index.vue` (standalone, `layout:false`), тексты в i18n,
   футер использует `shortSha`/`commitUrl`. Глобальный middleware больше не инициализирует
   B24-фрейм на публичном маршруте (`isPublicRoute`), иначе лендинг вне портала падал бы в ошибку.
-  Смоук served-процесса: `/`=200, `/api/health`=200, `/index.html`=200,
-  `/handler/uf.smart-link.html`=200, `/api/app-rating`=200 `{show:false}`.
-  - ⚠ **SEO-ограничение (следующий инкремент):** приложение собрано с `ssr: false`, а `app.vue`
-    оборачивает всё в `<ClientOnly>` → HTML лендинга отдаётся пустой оболочкой (контент
-    подставляет клиент). Для маркетинга нужен SSR/пререндер: включить `ssr: true`, снять blanket
-    `ClientOnly` (in-portal-страницы уже client-only через `*.client.vue`), проверить layout'ы,
-    инициализирующие фрейм (`layouts/default.vue` делает top-level `await $initializeB24Frame()`).
-    Вынесено в отдельный инкремент — рефакторинг затрагивает рабочие in-portal-страницы.
+  Смоук served-процесса: `/`=200, `/api/health`=200, `/app`=200, `/install`=200,
+  `/handler/uf.smart-link`=200, `/slider/*`=200, `/api/app-rating`=200 `{show:false}`.
+  - **In-portal стартовая переименована `/index.html` → `/app`** (как в эталоне: `/` —
+    лендинг, in-portal — свой путь). Иначе оба маршрута писались бы в один статический
+    `index.html`, и при включении SSR лендинг перезаписал бы in-portal-страницу (в карточке
+    портала открылся бы маркетинг). Дефолты навигации ошибок переведены на `/app`.
+  - ⚠ **После выката:** в настройках приложения на портале путь приложения должен быть
+    `https://<host>/app`, установочный — `https://<host>/install` (корень домена —
+    публичный лендинг без фрейма). Порталы, где установка шла на старой сборке, держат **старый
+    HANDLER-URL** UF-типа → приложение нужно **переустановить** (install заново делает
+    `userfieldtype.delete` + `add`).
+  - ✅ **SEO-ограничение снято** (см. запись «SSR/пререндер по образцу эталона» ниже).
 - **S2 — ЗАВЕРШЕНА (S2a–S2d):** полный серверный контур рейтинга. **S2c** — роуты
   `server/api/app-rating.get/post` (фрейм-токен → host, `{show}` / `prompted`|`opened`; без БД —
   инертно). **S2d** — клиент `useAppRating` берёт решение показа с **сервера** (`GET /api/app-rating`
@@ -100,10 +123,8 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
   `app/utils/build` + тесты), served-сборка `pnpm build` (preset node-server) проверена локально —
   `node .output/server/index.mjs` отдаёт `/…/api/health` → `{status:'ok',commit,commitUrl,time}`.
   CI переведён с `generate` на `build`. Серверный typecheck добавлен в `pnpm typecheck`.
-  - ⚠ **baseURL `/smart-link/`**: приложение сейчас смонтировано под этим префиксом (наследие
-    архивной модели), поэтому health доступен как `/smart-link/api/health`, а корень редиректит.
-    Для публичного лендинга на `/` и health-check деплоя на фазе лендинга/S3 пересмотрим baseURL
-    (лендинг на `/`, in-portal — под своим префиксом), сверяясь с эталоном.
+  - ✅ ~~baseURL `/smart-link/` префиксует health, корень редиректит~~ — **снято** записью
+    «Лендинг + снятие `baseURL`» выше: `/api/health` отвечает 200 напрямую.
 
 ## Упрочнение (будущие фазы)
 

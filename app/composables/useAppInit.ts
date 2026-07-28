@@ -159,7 +159,7 @@ export const useAppInit = (loggerTitle?: string) => {
         description: description,
         homePageIsHide: true,
         isShowClearError: true,
-        clearErrorHref: '/main'
+        clearErrorHref: '/app'
       }, (processErrorData ?? {})),
       cause: error,
       fatal: true

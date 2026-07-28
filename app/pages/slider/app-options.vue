@@ -196,7 +196,7 @@ async function makeSendPullCommand(command: string, params: Record<string, any> 
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/slider/app-options.html'
+      clearErrorHref: '/slider/app-options'
     })
   }
 }
@@ -234,7 +234,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/slider/app-options.html'
+      clearErrorHref: '/slider/app-options'
     })
   } finally {
     page.isLoading = false

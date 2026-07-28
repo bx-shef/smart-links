@@ -20,21 +20,18 @@ useHead({
  * @memo get appUrl from url
  */
 function getBaseUrl(): string {
-  const currentUrl = window.location.href
-  const lastSlashIndex = currentUrl.lastIndexOf('/')
-  return currentUrl.substring(0, lastSlashIndex + 1)
+  // Derive from origin+pathname (never href): a query/hash containing a slash would
+  // otherwise cut the base in the wrong place and register a broken handler URL.
+  const { origin, pathname } = window.location
+  return `${origin}${pathname.substring(0, pathname.lastIndexOf('/') + 1)}`
 }
 
 // region Init ////
-// const config = useRuntimeConfig()
-// const appUrl = config.public.appUrl
-
-const appUrl = getBaseUrl()
-
+// The page is prerendered, so nothing here may touch `window` or the portal frame at setup —
+// both are resolved client-side in onMounted below.
 const { $logger, initLang, processErrorGlobal } = useAppInit('Install')
 const { $initializeB24Frame } = useNuxtApp()
-const $b24: B24Frame = await $initializeB24Frame()
-await initLang($b24, localesI18n, setLocale)
+let $b24: null | B24Frame = null
 
 const confetti = useConfetti()
 
@@ -53,7 +50,6 @@ const steps = ref<Record<string, IStep>>({
   demo: {
     caption: t('page.install.step.demo.caption'),
     action: async () => {
-      console.warn(appUrl)
       return sleepAction(1000)
     }
   },
@@ -61,8 +57,10 @@ const steps = ref<Record<string, IStep>>({
     caption: t('page.install.step.userFields.caption'),
     action: async () => {
       const typeId = `type_smart_link_${import.meta.dev ? 'dev' : 'prod'}`
+      // Derived here (client-side): the handler URL must follow wherever the app is served from.
+      const appUrl = getBaseUrl()
 
-      await $b24.callBatch([
+      await $b24!.callBatch([
         {
           method: 'userfieldtype.delete',
           params: {
@@ -73,7 +71,7 @@ const steps = ref<Record<string, IStep>>({
           method: 'userfieldtype.add',
           params: {
             USER_TYPE_ID: typeId,
-            HANDLER: `${appUrl}handler/uf.smart-link.html`,
+            HANDLER: `${appUrl}handler/uf.smart-link`,
             TITLE: `[${import.meta.dev ? 'dev' : 'prod'}] SmartLink`,
             DESCRIPTION: ``,
             OPTIONS: {
@@ -111,7 +109,7 @@ async function makeFinish(): Promise<void> {
   confetti.fire()
   await sleepAction(3000)
 
-  await $b24.installFinish()
+  await $b24!.installFinish()
 }
 
 const stepsData = computed(() => {
@@ -129,6 +127,8 @@ onMounted(async () => {
   $logger.info('Hi from install page')
 
   try {
+    $b24 = await $initializeB24Frame()
+    await initLang($b24, localesI18n, setLocale)
     await $b24.parent.setTitle(t('page.install.seo.title'))
 
     for (const [key, step] of Object.entries(steps.value)) {
@@ -139,7 +139,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: false,
-      clearErrorHref: '/install.html'
+      clearErrorHref: '/install'
     })
   }
 })

@@ -360,7 +360,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     if (isFixLoadPage) {
@@ -504,7 +504,7 @@ async function makeAddLink(entity: EntityItem) {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     page.isLoading = false
@@ -550,7 +550,7 @@ async function makeUnLink() {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     page.isLoading = false
@@ -624,7 +624,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     page.isLoading = false

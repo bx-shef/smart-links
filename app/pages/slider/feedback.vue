@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { usePageStore } from '~/stores/page'
-import B24FormConfig from '~/config.b24form'
+import { useB24FormConfig } from '~/config.b24form'
 import { Type } from '@bitrix24/b24jssdk'
 import type { B24Frame } from '@bitrix24/b24jssdk'
 
 const { locales: localesI18n, setLocale } = useI18n()
 const page = usePageStore()
+const B24FormConfig = useB24FormConfig()
 
 definePageMeta({
   layout: 'slider-feedback'
@@ -110,7 +111,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: false,
-      clearErrorHref: '/slider/feedback.html'
+      clearErrorHref: '/slider/feedback'
     })
   } finally {
     page.isLoading = false

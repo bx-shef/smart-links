@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import * as locales from '@bitrix24/b24ui-nuxt/locale'
 import { usePageStore } from '~/stores/page'
 import BtnSpinnerIcon from '@bitrix24/b24icons-vue/button-specialized/BtnSpinnerIcon'
 
@@ -9,6 +10,8 @@ useHead({
   }
 })
 
+// <B24App> lives in the layout (not app.vue) so the public landing skips the b24ui provider.
+const { locale } = useI18n()
 const slots = defineSlots()
 
 const page = usePageStore()
@@ -20,7 +23,8 @@ useSeoMeta({
 </script>
 
 <template>
-  <B24SidebarLayout
+  <B24App :locale="locales[locale]">
+    <B24SidebarLayout
     :use-light-content="false"
     :b24ui="{
       root: 'overflow-y-hidden h-full min-h-full',
@@ -46,7 +50,8 @@ useSeoMeta({
     <template v-if="!!slots['footer'] && !page.isLoading" #content-bottom>
       <slot name="footer" />
     </template>
-  </B24SidebarLayout>
+    </B24SidebarLayout>
+  </B24App>
 </template>
 
 <style scoped>

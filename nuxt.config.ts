@@ -13,12 +13,13 @@ export default defineNuxtConfig({
     '@nuxtjs/i18n',
     '@pinia/nuxt'
   ],
-  ssr: false,
   devtools: { enabled: false },
   // No global baseURL: the public landing is served at '/', in-portal pages keep their own
   // '*.html' paths, and /api/* answers without a redirect (the served/Black Hole deploy target).
-  // The archive flow is unaffected — install.html derives the handler URL from window.location
-  // and tools/fix-paths rewrites asset paths relative at packaging time.
+  // In-portal registration is unaffected — install.html derives the UF handler URL from
+  // window.location. NOTE: tools/fix-paths keys off a 'dev-folder' marker that the current build
+  // never emits, so it is already inert (was inert before this change too); the archive flow
+  // needs a live-portal check either way — see docs/SERVER_MIGRATION.md.
 
   css: ['~/assets/css/main.css'],
   runtimeConfig: {
@@ -38,6 +39,15 @@ export default defineNuxtConfig({
     }
   },
   compatibilityDate: '2025-07-16',
+
+  nitro: {
+    prerender: {
+      // Landing + in-portal pages as real static HTML (the landing needs indexable content;
+      // in-portal pages are static shells that init the B24 frame client-side). /install is the
+      // B24 install handler — prerendered so a HEAD request returns 200 for URL validation.
+      routes: ['/', '/app', '/install', '/handler/uf.smart-link', '/slider/app-options', '/slider/feedback']
+    }
+  },
   vite: {
     plugins: [
       tailwindcss()

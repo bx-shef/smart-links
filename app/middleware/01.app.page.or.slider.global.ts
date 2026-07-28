@@ -1,6 +1,7 @@
 import { LoggerBrowser } from '@bitrix24/b24jssdk'
 import type { B24Frame } from '@bitrix24/b24jssdk'
 import type { RouteLocationNormalized } from 'vue-router'
+import { isPublicRoute } from '~/utils/routes'
 
 const $logger = LoggerBrowser.build(
   'middleware:app.page.or.slider.global',
@@ -9,16 +10,8 @@ const $logger = LoggerBrowser.build(
 
 const baseDir = '/'
 
-/** Routes rendered OUTSIDE a Bitrix24 portal — they must not initialise the frame SDK.
- *  The public landing lives at '/' (in-portal pages keep their own '*.html' paths). */
-function isPublicRoute(toPath: string): boolean {
-  const path = toPath.replace(/\/+$/, '')
-  return path === ''
-}
-
 function isSkipB24(toPath: string): boolean {
   return isPublicRoute(toPath)
-    || !toPath.includes(`${baseDir}`)
     || toPath.includes(`${baseDir}eula`)
     || toPath.includes(`${baseDir}render`)
 }
@@ -67,11 +60,9 @@ export default defineNuxtRouteMiddleware(async (
       let goTo: null | string = null
 
       if (optionsPlace === 'app-options') {
-        goTo = `${baseDir}slider/app-options.html`
+        goTo = `${baseDir}slider/app-options`
       } else if (optionsPlace === 'feedback') {
-        goTo = `${baseDir}slider/feedback.html`
-      } else if (optionsPlace === 'main' && ['/index.html'].includes(to.path)) {
-        goTo = `${baseDir}main.html`
+        goTo = `${baseDir}slider/feedback`
       }
 
       if (

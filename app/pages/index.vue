@@ -3,7 +3,7 @@ import { computed } from 'vue'
 import { shortSha, commitUrl } from '~/utils/build'
 
 // Public marketing landing served at '/'. Standalone: no Bitrix24 frame, no portal auth —
-// it must render outside a portal. In-portal pages keep their own '*.html' routes.
+// it must render outside a portal. In-portal pages live under /app, /install, /handler, /slider.
 definePageMeta({
   layout: false
 })
@@ -14,13 +14,17 @@ const config = useRuntimeConfig()
 useHead({
   bodyAttrs: { class: 'light light:[--air-theme-bg-color:#ffffff]' }
 })
+// Getters (not plain values) so title/description follow a locale change.
 useSeoMeta({
-  title: t('landing.seo.title'),
-  description: t('landing.seo.description')
+  title: () => t('landing.seo.title'),
+  description: () => t('landing.seo.description')
 })
 
 const commit = computed(() => String(config.public.commitSha || 'dev'))
-const build = computed(() => ({ sha: shortSha(commit.value), url: commitUrl(commit.value) }))
+// Only link a real build: 'dev' (local / no NUXT_PUBLIC_COMMIT_SHA) has nothing to point at.
+const build = computed(() => (commit.value === 'dev'
+  ? null
+  : { sha: shortSha(commit.value), url: commitUrl(commit.value) }))
 
 const steps = computed(() => [
   { key: 'step1', title: t('landing.how.step1.title'), text: t('landing.how.step1.text') },
@@ -39,7 +43,8 @@ const features = computed(() => [
 </script>
 
 <template>
-  <main class="min-h-dvh bg-white text-slate-900">
+  <div class="flex min-h-dvh flex-col bg-white text-slate-900">
+    <main class="flex-1">
     <!-- Hero -->
     <section class="mx-auto max-w-5xl px-6 pt-16 pb-12 sm:pt-24 sm:pb-16">
       <p class="inline-block rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
@@ -98,12 +103,14 @@ const features = computed(() => [
       </div>
     </section>
 
-    <!-- Footer -->
+    </main>
+
+    <!-- Footer sits outside <main> so it is exposed as the page's contentinfo landmark. -->
     <footer class="border-t border-slate-200">
       <div class="mx-auto flex max-w-5xl flex-col gap-2 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
         <span>{{ $t('landing.footer.publisher') }}</span>
         <a
-          v-if="build.sha"
+          v-if="build"
           :href="build.url"
           target="_blank"
           rel="noopener noreferrer"
@@ -113,5 +120,5 @@ const features = computed(() => [
         </a>
       </div>
     </footer>
-  </main>
+  </div>
 </template>

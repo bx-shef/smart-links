@@ -1,11 +1,11 @@
 <script setup lang="ts">
-import type { B24Frame } from '@bitrix24/b24jssdk'
+import * as locales from '@bitrix24/b24ui-nuxt/locale'
 import { usePageStore } from '~/stores/page'
 import { useAppInit } from '~/composables/useAppInit'
 import BtnSpinnerIcon from '@bitrix24/b24icons-vue/button-specialized/BtnSpinnerIcon'
 
 // region Init ////
-const { t } = useI18n()
+const { t, locale } = useI18n()
 const slots = defineSlots()
 
 const page = usePageStore()
@@ -16,24 +16,26 @@ useSeoMeta({
 
 const { processErrorGlobal } = useAppInit('LayoutDefault')
 const { $initializeB24Frame } = useNuxtApp()
-const $b24: B24Frame = await $initializeB24Frame()
 // endregion ////
 
 // region Actions ////
-const makeOpenFeedBack = async() => {
+// The frame is resolved lazily on click (never at setup): a top-level await would run during
+// prerender/SSR, where there is no portal frame.
+const makeOpenFeedBack = async () => {
   try {
+    const $b24 = await $initializeB24Frame()
     await $b24?.slider.openSliderAppPage(
       {
         place: 'feedback',
         bx24_width: 600,
-        bx24_title: t('page.feedback.seo.title'),
+        bx24_title: t('page.feedback.seo.title')
       }
     )
   } catch (error) {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: false,
-      clearErrorHref: '/main.html'
+      clearErrorHref: '/app'
     })
   }
 }
@@ -41,7 +43,8 @@ const makeOpenFeedBack = async() => {
 </script>
 
 <template>
-  <B24SidebarLayout
+  <B24App :locale="locales[locale]">
+    <B24SidebarLayout
     :use-light-content="false"
     :b24ui="{
       container: 'px-[22px] lg:px-[22px] lg:pt-0 mt-[12px]'
@@ -77,5 +80,6 @@ const makeOpenFeedBack = async() => {
     <template v-if="!!slots['footer'] && !page.isLoading" #content-bottom>
       <slot name="footer" />
     </template>
-  </B24SidebarLayout>
+    </B24SidebarLayout>
+  </B24App>
 </template>

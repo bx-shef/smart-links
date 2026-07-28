@@ -70,7 +70,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/index.html'
+      clearErrorHref: '/app'
     })
   } finally {
     page.isLoading = false

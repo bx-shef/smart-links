@@ -1,12 +1,14 @@
 # SmartLinks
 
-> Last reviewed: 2026-07-26
+> Last reviewed: 2026-07-28
 
-Bitrix24-приложение «Умные ссылки». Издатель ИП Шевчик И.С. Клиентское (`ssr: false`) Nuxt 4-
-приложение, которое собирается в статику и загружается в портал **архивом** (локальное/маркет-
-приложение). Весь код исполняется **внутри iframe портала** (`@bitrix24/b24jssdk` → `B24Frame`);
-своего сервера/БД нет — состояние живёт в опциях приложения на портале (`app.option.*`), обмен в
-реальном времени — через pull.
+Bitrix24-приложение «Умные ссылки». Издатель ИП Шевчик И.С. Nuxt 4 + Nitro: один процесс отдаёт
+публичный лендинг (`/`), in-portal-страницы (`/app`, `/install`, `/handler/…`, `/slider/…`) и
+`/api/*`. Все маршруты **пререндерятся** в реальный HTML (лендинг индексируется), а Bitrix24-фрейм
+поднимается **на клиенте** (`onMounted`). In-portal-код исполняется **внутри iframe
+портала** (`@bitrix24/b24jssdk` → `B24Frame`): настройки поля живут в опциях портала
+(`app.option.*`), обмен в реальном времени — через pull. Серверная часть хранит состояние попапа
+оценки в Postgres (без `DATABASE_URL` — инертна). Архивная упаковка — легаси-фолбэк.
 
 **Суть:** приложение регистрирует пользовательский тип поля `SmartLink`; в карточке CRM это поле
 рендерится плейсментом и работает как «умная ссылка» на связанную сущность (CRM или элемент
@@ -16,9 +18,10 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
 ## Раскладка
 
 - `app/` — Nuxt (авто-импорт):
-  - `pages/` — client-only страницы (`*.html.client.vue` → статические `*.html`): `index`,
-    `install`, `handler/uf.smart-link` (обработчик UF-типа), `slider/app-options` (настройки,
-    админ, **сейчас заглушка**), `slider/feedback` (обратная связь).
+  - `pages/` — `index.vue` (**публичный лендинг** на `/`, вне портала, `layout: false`) +
+    in-portal страницы: `app` (стартовая), `install`, `handler/uf.smart-link` (обработчик
+    UF-типа), `slider/app-options` (настройки, админ), `slider/feedback` (обратная связь).
+    Все пререндерятся; фрейм инициализируется в `onMounted`, `<B24App>` — в layout'ах.
   - `stores/` — Pinia: `appSettings` (версия/статус/`configUfListSettings` + пути + `saveSettings`),
     `link` (текущая целевая ссылка), `page` (title/description/isLoading), `user` (`isAdmin`).
   - `composables/useAppInit.ts` — старт приложения: язык, `initB24Helper` (App/AppOptions/Profile),
@@ -31,7 +34,8 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
 - `tools/` — оффлайн: `translate.ui.ts` (перевод локалей через DeepSeek), `fix-paths.mjs` +
   `create-archive.mjs` (упаковка архива для B24).
 - `template/` — HTML-шаблон загрузчика dev-сервера.
-- `server/tsconfig.json` — только типы (полноценного сервера нет).
+- `server/` — Nitro: `api/` (`health`, `app-rating` get/post), `utils/` (фрейм-токен, политика и
+  store рейтинга), `db/` (`pg`-пул, схема `app_rating`), `plugins/migrate.ts`.
 - `docs/` — документация (см. [`docs/README.md`](docs/README.md)).
 
 **Скоупы приложения:** `user_brief`, `crm`, `list`, `placement`, `userfieldconfig`, `pull`.
@@ -78,8 +82,10 @@ pnpm translate-ui # оффлайн-перевод локалей (нужен DEE
   карточки через pull-команду `reload.options`.
 - **UF-тип** регистрируется на установке (`userfieldtype.add`, `USER_TYPE_ID =
   type_smart_link_<dev|prod>`, `HANDLER` = URL страницы-обработчика).
-- **Упаковка:** портал ждёт статический архив. `pnpm generate` → `tools/fix-paths.mjs`
-  (относительные пути + `baseURL` из `window.location`) → `tools/create-archive.mjs` (zip).
+- **Деплой:** основной путь — served-процесс (`pnpm build` → `node .output/server/index.mjs`).
+  Пути приложения в портале: `<host>/app` и `<host>/install` (корень — лендинг).
+  Архивная упаковка (`pnpm generate-archive-for-b24`) — легаси-фолбэк; ⚠ `tools/fix-paths.mjs`
+  сейчас инертен (ищет несуществующий маркер `dev-folder`), требует починки перед использованием.
 
 ## Workflow / Git
 

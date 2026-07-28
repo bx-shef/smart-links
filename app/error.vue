@@ -22,10 +22,10 @@ const errorData = ref({
   title: props.error?.statusMessage ?? 'Error',
   description: (props.error?.data as any)?.description || errorBase?.value?.message || '',
   clearErrorIsShow: (props.error?.data as any)?.isShowClearError === true,
-  clearErrorHref: (props.error?.data as any)?.clearErrorHref ?? '/',
+  clearErrorHref: (props.error?.data as any)?.clearErrorHref ?? '/app',
   clearErrorTitle: (props.error?.data as any)?.clearErrorTitle ?? 'Clear errors',
   homePageIsHide: (props.error?.data as any)?.homePageIsHide === true,
-  homePageHref: (props.error?.data as any)?.homePageHref ?? '/',
+  homePageHref: (props.error?.data as any)?.homePageHref ?? '/app',
   homePageTitle: (props.error?.data as any)?.homePageTitle ?? 'Go back home'
 })
 
