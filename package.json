@@ -26,7 +26,7 @@
     "@bitrix24/b24ui-nuxt": "^1.0.3",
     "@nuxtjs/i18n": "^10.0.6",
     "@pinia/nuxt": "^0.11.2",
-    "@tailwindcss/vite": "^4.1.13",
+    "@tailwindcss/vite": "^4.3.3",
     "nuxt": "^4.0.3",
     "pg": "^8.22.0"
   },
