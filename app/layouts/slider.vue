@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import * as locales from '@bitrix24/b24ui-nuxt/locale'
+// Named import, not `import * as locales`: the namespace form drags all ~15 b24ui
+// locales into the chunk, and only `ru` is configured.
+import { ru } from '@bitrix24/b24ui-nuxt/locale'
 import { usePageStore } from '~/stores/page'
 import BtnSpinnerIcon from '@bitrix24/b24icons-vue/button-specialized/BtnSpinnerIcon'
 
@@ -11,7 +13,6 @@ useHead({
 })
 
 // <B24App> lives in the layout (not app.vue) so the public landing skips the b24ui provider.
-const { locale } = useI18n()
 const slots = defineSlots()
 
 const page = usePageStore()
@@ -20,7 +21,7 @@ usePageSeo()
 </script>
 
 <template>
-  <B24App :locale="locales[locale]">
+  <B24App :locale="ru">
     <B24SidebarLayout
       :use-light-content="false"
       :b24ui="{

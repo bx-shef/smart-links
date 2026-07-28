@@ -31,6 +31,8 @@ export const useAppInit = (loggerTitle?: string) => {
     import.meta.dev
   )
 
+  const { t } = useI18n()
+
   // Stores
   const appSettings = useAppSettingsStore()
   const user = useUserStore()
@@ -141,6 +143,26 @@ export const useAppInit = (loggerTitle?: string) => {
     processErrorData?: ProcessErrorData
   ) {
     $logger.error(error)
+
+    // "No frame" is not a failure of the app — it means the page was opened outside a portal. Show
+    // the instruction and a link to the landing, and ignore the caller's error options: they are
+    // tuned for in-portal faults and would hide the only useful way out while offering a retry that
+    // reloads the same frameless page.
+    if (error instanceof FrameUnavailableError) {
+      showError({
+        statusCode: 503,
+        statusMessage: t('error.notInPortalTitle'),
+        data: {
+          description: t('error.notInPortal'),
+          homePageIsHide: false,
+          homePageHref: '/',
+          isShowClearError: false
+        },
+        cause: error,
+        fatal: true
+      })
+      return
+    }
 
     let title = 'Error'
     let description = ''

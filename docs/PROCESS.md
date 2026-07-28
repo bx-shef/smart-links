@@ -150,7 +150,7 @@ CRM-сущности требуют расширения резолверов.
   сущностям + `saveSettings`), `link` (текущая целевая ссылка), `page` (title/description/
   isLoading), `user` (`login`/`isAdmin`).
 - `middleware/01.app.page.or.slider.global.ts` — по `placement.options.place` роутит на
-  страницу слайдера (`app-options`/`feedback`/`main`).
+  страницу слайдера (`app-options`/`feedback`).
 - Обратная связь (`slider/feedback`) — CRM-форма Bitrix24 в iframe по
   `b24FormId`/`b24FormSecret`/`b24FormLoaderScript` (env `NUXT_PUBLIC_B24_FORM_*`), с
   прокидыванием свойств портала (домен, статус приложения, план, дни).
@@ -190,15 +190,35 @@ pnpm generate-archive-for-b24  # generate → fix-paths → create-archive
 
 ## Стек
 
-Nuxt 4 + Nitro (пререндер маршрутов, preset `node-server`), `pg`, `@bitrix24/b24ui-nuxt`, `@bitrix24/b24jssdk(-nuxt)`,
-`@bitrix24/b24icons-vue`, `@nuxtjs/i18n`, `@pinia/nuxt`, `@unovis/vue` (графики),
-`luxon`, Tailwind CSS (через `@tailwindcss/vite`). Инструменты разработки: ESLint
+Nuxt 4 + Nitro (пререндер маршрутов, preset `node-server`), `pg`, `@bitrix24/b24ui-nuxt`,
+`@bitrix24/b24jssdk`, `@bitrix24/b24icons-vue`, `@nuxtjs/i18n`, `@pinia/nuxt`,
+Tailwind CSS (через `@tailwindcss/vite`). Инструменты разработки: ESLint
 (`@nuxt/eslint`), TypeScript, `openai` + `tsx` + `consola` (для оффлайн-перевода локалей),
-`archiver` (упаковка). Пакетный менеджер — pnpm.
+`archiver` + `glob` (упаковка архива). Пакетный менеджер — pnpm.
+
+> Модуль `@bitrix24/b24jssdk-nuxt` **не** используется: его плагин импортирует SDK статически, и
+> тот уезжает в entry-чанк, который грузит публичный лендинг. Фрейм поднимает
+> `app/composables/useB24.ts` ленивым `import()`.
 
 ## Конфигурация окружения
 
-- `NUXT_PUBLIC_B24_FORM_ID` / `NUXT_PUBLIC_B24_FORM_SECRET` / `NUXT_PUBLIC_B24_FORM_LOADER_SCRIPT`
-  — CRM-форма обратной связи.
+Полный список с комментариями — в [`.env.example`](../.env.example). Ключевое:
+
+**Запекаются на СБОРКЕ** (пререндер замораживает `runtimeConfig.public` в HTML — задать только в
+рантайме недостаточно, см. таблицу в [`SERVER_MIGRATION.md`](SERVER_MIGRATION.md)):
+- `NUXT_PUBLIC_B24_FORM_ID` / `_SECRET` / `_LOADER_SCRIPT` — CRM-форма обратной связи.
+- `NUXT_PUBLIC_SITE_URL` — `canonical`/`og:url` лендинга (должен быть абсолютным http(s)-URL).
+- `NUXT_PUBLIC_B24_MARKET_CODE` — попап «оцените приложение».
+- `NUXT_PUBLIC_COMMIT_SHA` — ссылка на сборку в футере лендинга и в `/api/health`.
+
+**Рантайм (сервер):**
+- `DATABASE_URL` — Postgres для состояния попапа оценки; пусто ⇒ роуты рейтинга инертны.
+- `APP_EDGE_SECURITY` — `1`, если перед процессом нет обратного прокси (см.
+  [`DEPLOY_VIBECODE.md`](DEPLOY_VIBECODE.md)); за прокси **не** ставить.
+- `APP_EDGE_TRUST_XFF` — `1`, только если проверено, что впереди доверенный прокси.
+- `B24_EXTRA_ZONES` — дополнительные облачные зоны Б24 для SSRF-allowlist.
+
+**Оффлайн/dev:**
 - `DEEPSEEK_API_KEY` — только для `tools/translate.ui.ts` (в рантайм не попадает).
+- `B24_HOOK` — вебхук живого тест-портала; хранить в `.env.b24test` (gitignored), не в репозитории.
 - `NUXT_ALLOWED_HOSTS` — доверенные хосты для dev-туннелей (например, ngrok).

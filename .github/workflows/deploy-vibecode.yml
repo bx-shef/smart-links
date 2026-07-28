@@ -1,0 +1,60 @@
+# Redeploy this app to its Bitrix24 Vibecode Black Hole server (docs/DEPLOY_VIBECODE.md).
+#
+# OPT-IN: the job runs ONLY when the repo variable VIBECODE_DEPLOY == 'true'. Merging this workflow
+# therefore does not start failing (or real) deploys until the owner has done the one-time setup and
+# flipped the switch.
+#
+# One-time setup (Settings -> Secrets and variables -> Actions):
+#   Secret   VIBE_KEY         vibe_api_...  (personal key that owns the server + billing)
+#   Secret   APP_ENV_JSON     JSON object of env for the app, e.g.
+#                             {"APP_EDGE_SECURITY":"1",
+#                              "DATABASE_URL":"postgres://app:app@127.0.0.1:5432/app",
+#                              "NUXT_PUBLIC_SITE_URL":"https://app-XXXX.vibecode.bitrix24.tech",
+#                              "NUXT_PUBLIC_B24_MARKET_CODE":"shef.smartlink"}
+#     APP_EDGE_SECURITY=1 is REQUIRED here: with no reverse proxy in front, the app is the only
+#     thing that can send CSP / security headers and cap request bodies (server/utils/edgeSecurity.ts).
+#     DATABASE_URL is optional — without it the rating routes stay inert and everything else works.
+#   Variable APP_NAME         server name (e.g. smart-links)
+#   Variable PRESTART_CMD     optional provisioning one-liner (Postgres; docs/DEPLOY_VIBECODE.md)
+#   Variable VIBECODE_DEPLOY  set to 'true' to enable this workflow (the opt-in switch)
+#
+# Verify the FIRST deploy manually (docs/DEPLOY_VIBECODE.md) before trusting CI with it.
+
+name: Deploy to Vibecode Black Hole
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+concurrency:
+  group: vibecode-deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+# Least privilege: the job checks out a public repo and curls Bitrix — no token scopes needed.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    # Opt-in gate: nothing runs until the owner sets the VIBECODE_DEPLOY repo variable.
+    if: vars.VIBECODE_DEPLOY == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+
+      - name: Deploy
+        env:
+          VIBE_KEY: ${{ secrets.VIBE_KEY }}
+          APP_NAME: ${{ vars.APP_NAME }}
+          # Pin the exact pushed commit as the source archive (public repo → no token needed).
+          SOURCE_URL: https://codeload.github.com/${{ github.repository }}/tar.gz/${{ github.sha }}
+          ENV_JSON: ${{ secrets.APP_ENV_JSON }}
+          PRESTART_CMD: ${{ vars.PRESTART_CMD }}
+          # Override defaults here if needed:
+          # VIBE_PLAN: bc-micro
+          # VIBE_REGION: ru-central1-b
+          # VIBE_RUNTIME: node22
+        run: |
+          chmod +x deploy/vibecode-deploy.sh
+          ./deploy/vibecode-deploy.sh

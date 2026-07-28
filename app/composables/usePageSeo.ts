@@ -14,6 +14,9 @@ export function usePageSeo() {
 
   useSeoMeta({
     title: () => page.title || t('app.name'),
-    description: () => page.description || undefined
+    description: () => page.description || undefined,
+    // robots.txt stops crawling, but a URL found via an external link can still be INDEXED (listed
+    // without a snippet). These pages are only meaningful inside a portal iframe, so say so here too.
+    robots: 'noindex, nofollow'
   })
 }

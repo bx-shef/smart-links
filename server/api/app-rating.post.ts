@@ -2,6 +2,7 @@ import { extractFrameAuth } from '../utils/frameAuth'
 import { verifyFrameToken } from '../utils/frameVerify'
 import { markOpened, markPrompted } from '../utils/appRatingStore'
 import { parseRatingAction } from '../utils/appRatingRequest'
+import { allowFrameRequest } from '../utils/frameRateGuard'
 import { query, dbEnabled } from '../db/client'
 
 // POST /api/app-rating — record a rating-prompt lifecycle event for this portal.
@@ -15,6 +16,11 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 503)
     return { error: 'db disabled' }
   }
+  // After the DB gate but before verification: verification is what costs an outbound REST call
+  // to the portal, and with no store configured the route does no work worth metering.
+  if (!allowFrameRequest(event)) {
+    return { error: 'rate limited' }
+  }
   const auth = extractFrameAuth(getHeaders(event) as Record<string, string | undefined>)
   if (!auth) {
     setResponseStatus(event, 401)
@@ -22,8 +28,11 @@ export default defineEventHandler(async (event) => {
   }
   const verified = await verifyFrameToken(auth)
   if (!verified.ok || !verified.host) {
+    // The status distinguishes "rejected" from "upstream unavailable"; `verified.reason` stays out
+    // of the body so an unauthenticated caller can't use us as an oracle for whether a given token
+    // is live on a given portal — our own IP makes those probes, not theirs.
     setResponseStatus(event, verified.status ?? 401)
-    return { error: 'authorization failed', reason: verified.reason }
+    return { error: 'authorization failed' }
   }
 
   const action = parseRatingAction(await readBody(event).catch(() => null))

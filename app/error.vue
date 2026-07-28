@@ -1,10 +1,18 @@
 <script setup lang="ts">
 import { ref } from 'vue'
+// Named import, not `import * as locales`: the namespace form drags all ~15 b24ui
+// locales into the chunk, and only `ru` is configured.
+import { ru } from '@bitrix24/b24ui-nuxt/locale'
 import type { NuxtError } from '#app'
 
 /**
  * @todo add B24Error component
  */
+// Nuxt renders this INSTEAD of app.vue, so the layouts' <B24App> never wraps it — this page has to
+// provide the b24ui context itself or its components fall back to the English default locale and
+// lose toasts/tooltips/overlays.
+const { t } = useI18n()
+
 useHead({
   bodyAttrs: { class: 'light' }
 })
@@ -19,23 +27,23 @@ console.error(errorBase.value)
 
 const errorData = ref({
   code: props.error?.statusCode ?? 400,
-  title: props.error?.statusMessage ?? 'Error',
+  title: props.error?.statusMessage ?? t('error.title'),
   description: (props.error?.data as any)?.description || errorBase?.value?.message || '',
   clearErrorIsShow: (props.error?.data as any)?.isShowClearError === true,
   clearErrorHref: (props.error?.data as any)?.clearErrorHref ?? '/app',
-  clearErrorTitle: (props.error?.data as any)?.clearErrorTitle ?? 'Clear errors',
+  clearErrorTitle: (props.error?.data as any)?.clearErrorTitle ?? t('error.clear'),
   homePageIsHide: (props.error?.data as any)?.homePageIsHide === true,
   // "Home" defaults to the public landing (an error can happen outside a portal); in-portal
   // pages pass their own href via the error data.
   homePageHref: (props.error?.data as any)?.homePageHref ?? '/',
-  homePageTitle: (props.error?.data as any)?.homePageTitle ?? 'Go back home'
+  homePageTitle: (props.error?.data as any)?.homePageTitle ?? t('error.home')
 })
 
 const handleError = () => clearError({ redirect: errorData.value.clearErrorHref })
 </script>
 
 <template>
-  <div class="flex flex-col">
+  <B24App :locale="ru">
     <div class="my-[24px] py-[24px] flex flex-col justify-center items-center h-[calc(100vh-60px)] backdrop-blur-sm bg-(--ui-color-design-outline-na-bg)">
       <ProseP small accent="less">
         [code: {{ errorData.code }}]
@@ -64,5 +72,5 @@ const handleError = () => clearError({ redirect: errorData.value.clearErrorHref 
         />
       </div>
     </div>
-  </div>
+  </B24App>
 </template>

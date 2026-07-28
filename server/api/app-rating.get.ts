@@ -2,6 +2,7 @@ import { extractFrameAuth } from '../utils/frameAuth'
 import { verifyFrameToken } from '../utils/frameVerify'
 import { getRatingState } from '../utils/appRatingStore'
 import { shouldPrompt } from '../utils/appRatingPolicy'
+import { allowFrameRequest } from '../utils/frameRateGuard'
 import { query, dbEnabled } from '../db/client'
 
 // GET /api/app-rating — should the in-portal «оцените приложение» modal be shown for this portal?
@@ -11,6 +12,11 @@ import { query, dbEnabled } from '../db/client'
 export default defineEventHandler(async (event) => {
   if (!dbEnabled()) {
     return { show: false } // no store — nothing to prompt
+  }
+  // After the DB gate but before verification: verification is what costs an outbound REST call
+  // to the portal, and with no store configured the route does no work worth metering.
+  if (!allowFrameRequest(event)) {
+    return { show: false }
   }
   const auth = extractFrameAuth(getHeaders(event) as Record<string, string | undefined>)
   if (!auth) {

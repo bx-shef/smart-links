@@ -11,12 +11,15 @@ definePageMeta({
 const { t } = useI18n()
 const config = useRuntimeConfig()
 
-useHead({
-  bodyAttrs: { class: 'light light:[--air-theme-bg-color:#ffffff]' }
-})
 // Absolute origin for canonical/og:url. Baked at build time from NUXT_PUBLIC_SITE_URL; when it is
-// unset every URL-bearing tag is omitted rather than pointing at a guessed host.
-const siteUrl = computed(() => String(config.public.siteUrl || '').replace(/\/+$/, ''))
+// unset — or not an absolute http(s) URL — every URL-bearing tag is omitted rather than pointing at
+// a guessed host. The scheme check matters: a value like "example.com" would resolve RELATIVE to
+// the page, making <link rel="canonical"> point at a path that does not exist — worse than no tag,
+// which is exactly what omitting an empty value is meant to avoid.
+const siteUrl = computed(() => {
+  const raw = String(config.public.siteUrl || '').trim().replace(/\/+$/, '')
+  return /^https?:\/\/[^/]+/.test(raw) ? raw : ''
+})
 
 // Getters (not plain values) so title/description follow a locale change.
 useSeoMeta({
@@ -94,7 +97,7 @@ const features = computed(() => [
             :key="step.key"
             class="rounded-xl border border-slate-200 bg-white p-6"
           >
-            <span class="flex size-8 items-center justify-center rounded-full bg-slate-900 text-sm text-white">
+            <span aria-hidden="true" class="flex size-8 items-center justify-center rounded-full bg-slate-900 text-sm text-white">
               {{ index + 1 }}
             </span>
             <h3 class="mt-4 font-medium">{{ step.title }}</h3>

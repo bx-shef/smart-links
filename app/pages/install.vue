@@ -12,8 +12,11 @@ definePageMeta({
   layout: 'index-page'
 })
 
-useHead({
-  title: t('page.install.seo.title')
+// Via the page store + watchEffect so the title follows the portal's locale, which initLang only
+// resolves after the frame handshake — a value captured at setup would freeze on the prerendered one.
+const page = usePageStore()
+watchEffect(() => {
+  page.title = t('page.install.seo.title')
 })
 
 /**
@@ -130,7 +133,7 @@ onMounted(async () => {
   try {
     $b24 = await initB24Frame()
     if (!$b24) {
-      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+      throw new FrameUnavailableError('Bitrix24 frame is not available (opened outside a portal)')
     }
     await initLang($b24, localesI18n, setLocale)
     await $b24.parent.setTitle(t('page.install.seo.title'))

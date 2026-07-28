@@ -1,5 +1,6 @@
-# CI for SmartLinks (Nuxt 4 client-only app). Runs the full check gate
-# (lint + typecheck + test) + SSG build so a regression can't reach main.
+# CI for SmartLinks (Nuxt 4 + Nitro; one process serves the landing, the in-portal pages and
+# /api/*). Runs the full check gate (lint + typecheck + test) + build so a regression can't
+# reach main.
 name: CI
 
 on:

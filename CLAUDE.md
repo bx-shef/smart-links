@@ -24,14 +24,18 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
     Все пререндерятся; фрейм инициализируется в `onMounted`, `<B24App>` — в layout'ах.
   - `stores/` — Pinia: `appSettings` (версия/статус/`configUfListSettings` + пути + `saveSettings`),
     `link` (текущая целевая ссылка), `page` (title/description/isLoading), `user` (`isAdmin`).
-  - `composables/useB24.ts` — **единственная точка входа во фрейм**: ленивый `import()` SDK +
-    идемпотентный `init()`. Статических импортов `@bitrix24/b24jssdk` в entry-графе быть не должно —
-    иначе 300 КБ SDK уезжают в чанк, который грузит публичный лендинг (плагин
-    `@bitrix24/b24jssdk-nuxt` по той же причине не подключён).
+  - `composables/useB24.ts` — **единственная точка входа во фрейм**: ленивый `import()` SDK,
+    идемпотентный `init()` с таймаутом. Инвариант **транзитивный**: ничто достижимое из `app.vue`,
+    layout'а, глобального middleware или плагина не должно импортировать значения из
+    `@bitrix24/b24jssdk` (`import type` стирается и безопасен) — иначе ~300 КБ SDK уезжают в чанк,
+    который грузит публичный лендинг. Пакет `@bitrix24/b24jssdk-nuxt` по той же причине удалён.
+    Неудачный handshake **кэшируется, а не ретраится**: SDK латчит `isMakeFirstCall`, и повторный
+    `initializeB24Frame()` после отказа **не резолвится никогда** (проверено по исходникам SDK).
   - `composables/useAppInit.ts` — старт приложения: язык, `initB24Helper` (App/AppOptions/Profile),
     наполнение сторов, `processErrorGlobal`, pull-клиент.
   - `composables/usePageSeo.ts` — `<title>`/`description` in-portal страниц из стора `page`
-    (геттеры, фолбэк на `app.name`, пустой `description` не эмитится).
+    (геттеры, фолбэк на `app.name`, пустой `description` не эмитится, `robots: noindex`).
+  - `composables/useAppRating.ts` — клиент серверного рейтинга (решение показа берётся с сервера).
   - `middleware/` — роутинг по `placement.options.place` (слайдеры).
   - `layouts/` / `components/` / `utils/` (чистые функции) / `assets/`.
 - `shared/types/base.d.ts` — общие типы (`UfSmartLinkType`, `IStep`).
@@ -40,8 +44,11 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
 - `tools/` — оффлайн: `translate.ui.ts` (перевод локалей через DeepSeek), `fix-paths.mjs` +
   `create-archive.mjs` (упаковка архива для B24).
 - `template/` — HTML-шаблон загрузчика dev-сервера.
-- `server/` — Nitro: `api/` (`health`, `app-rating` get/post), `utils/` (фрейм-токен, политика и
-  store рейтинга), `db/` (`pg`-пул, схема `app_rating`), `plugins/migrate.ts`.
+- `server/` — Nitro: `api/` (`health`, `app-rating` get/post), `utils/` (фрейм-токен, SSRF-гард +
+  allowlist зон Б24, политика и store рейтинга, edge-защита, пер-IP лимит), `db/` (`pg`-пул, схема
+  `app_rating`), `middleware/edgeSecurity.ts` (кап тела), `plugins/` (`migrate`, `edgeHeaders`).
+- `deploy/` + `.github/workflows/deploy-vibecode.yml` — деплой в Bitrix24 Vibecode Black Hole
+  (**opt-in**, см. [`docs/DEPLOY_VIBECODE.md`](docs/DEPLOY_VIBECODE.md)).
 - `docs/` — документация (см. [`docs/README.md`](docs/README.md)).
 
 **Скоупы приложения:** `user_brief`, `crm`, `list`, `placement`, `userfieldconfig`, `pull`.
@@ -89,6 +96,18 @@ pnpm translate-ui # оффлайн-перевод локалей (нужен DEE
   карточки через pull-команду `reload.options`.
 - **UF-тип** регистрируется на установке (`userfieldtype.add`, `USER_TYPE_ID =
   type_smart_link_<dev|prod>`, `HANDLER` = URL страницы-обработчика).
+- **Без обратного прокси приложение само вешает edge-защиту** — флаг `APP_EDGE_SECURITY=1`
+  (`server/utils/edgeSecurity.ts` + `plugins/edgeHeaders.ts`): CSP с `frame-ancestors` доменов Б24,
+  `nosniff`, `Referrer-Policy`, HSTS на **все** ответы + кап тела запроса. Заголовки вешает
+  **плагин** на хук `beforeResponse`, а не middleware: Nitro отдаёт пререндеренные страницы
+  обработчиком public-assets **до** middleware, и HTML уходил бы вообще без CSP (проверено).
+  За прокси флаг **не** ставим — два CSP браузер пересекает рестриктивно.
+- **Пер-IP лимит на `/api/app-rating`** работает независимо от флага: каждый вызов тратит исходящий
+  `profile`-запрос в портал на проверку фрейм-токена. Ключ — реальный TCP-пир; `X-Forwarded-For`
+  учитывается только при `APP_EDGE_TRUST_XFF=1`.
+- **SSRF-гард — явный список зон** (`B24_ZONES`), а не `bitrix24.<любой TLD>`: свободный TLD может
+  зарегистрировать кто угодно, а «проверка» фрейм-токена — это ответ самого хоста. ⚠ Список
+  собран по наблюдениям, **сверить с живым Маркетом**; расширяется через `B24_EXTRA_ZONES`.
 - **Деплой:** основной путь — served-процесс (`pnpm build` → `node .output/server/index.mjs`).
   Пути приложения в портале: `<host>/app` и `<host>/install` (корень — лендинг).
   Архивная упаковка (`pnpm generate-archive-for-b24`) — легаси-фолбэк; ⚠ `tools/fix-paths.mjs`

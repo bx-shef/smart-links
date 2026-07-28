@@ -9,12 +9,16 @@ const page = usePageStore()
 definePageMeta({
   layout: 'index-page'
 })
-useHead({
-  title: t('page.index.seo.title')
+// Through the page store (the layout's usePageSeo renders it), and via watchEffect rather than a
+// plain assignment: the portal's locale is only known after the frame handshake, so a value
+// captured once at setup would freeze on the prerendered default.
+watchEffect(() => {
+  page.title = t('page.index.seo.title')
+  page.description = t('page.index.seo.description')
 })
 
 // region Init ////
-const { initApp, b24Helper, processErrorGlobal } = useAppInit('IndexPage')
+const { initApp, b24Helper, destroyB24Helper, processErrorGlobal } = useAppInit('IndexPage')
 const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 
@@ -54,7 +58,7 @@ onMounted(async () => {
   try {
     $b24 = await initB24Frame()
     if (!$b24) {
-      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+      throw new FrameUnavailableError('Bitrix24 frame is not available (opened outside a portal)')
     }
     await initApp($b24, localesI18n, setLocale)
 
@@ -81,7 +85,12 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
-  $b24?.destroy()
+  // The frame is a document-level singleton owned by useB24, not by this page — destroying it here
+  // would unsubscribe its message listener while useB24 kept handing the dead instance to the next
+  // caller. Navigating away and back (e.g. the error page's «Clear errors» link, which points at
+  // /app) would then hang on a frame that can never answer. The other in-portal pages likewise
+  // only tear down their own helper.
+  destroyB24Helper()
 })
 // endregion ////
 </script>

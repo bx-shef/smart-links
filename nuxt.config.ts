@@ -6,9 +6,11 @@ const extraAllowedHosts = (process?.env.NUXT_ALLOWED_HOSTS?.split(',').map((s: s
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
-  // NOTE: '@bitrix24/b24jssdk-nuxt' is intentionally NOT registered — its plugin imports the
-  // B24 SDK statically, which lands in the entry chunk the public landing loads. The frame is
-  // created lazily by composables/useB24 (dynamic import), as in the reference app.
+  // NOTE: '@bitrix24/b24jssdk-nuxt' is deliberately NOT used (and no longer a dependency) — its
+  // plugin imports the B24 SDK statically, which lands in the entry chunk the public landing loads.
+  // The frame is created lazily by composables/useB24 (dynamic import), as in the reference app.
+  // The invariant is TRANSITIVE: nothing reachable from app.vue, a layout, global middleware or a
+  // plugin may import '@bitrix24/b24jssdk' for a value (type-only imports erase and are fine).
   modules: [
     '@bitrix24/b24ui-nuxt',
     '@nuxt/eslint',
@@ -46,18 +48,33 @@ export default defineNuxtConfig({
   },
   compatibilityDate: '2025-07-16',
 
-  // Legacy '*.html' URLs (the pre-rename in-portal paths) redirect to the new routes. Without
-  // this a portal still pointed at '/index.html' would silently render the public LANDING inside
-  // its iframe, and the other old paths would 404 — both hard to diagnose.
+  // Legacy in-portal URLs redirect to the new routes, so a portal registered against an older
+  // build keeps working instead of 404-ing on a UF handler (which fails silently, inside an iframe).
+  //
+  // The old build set `app.baseURL: '/smart-link/'` and emitted '*.html' pages, so the real legacy
+  // URLs carry that prefix — the unprefixed forms are kept only for a root-based archive drop.
+  // NOTE '/index.html' is deliberately absent: under the new layout that is the LANDING's own
+  // filename, and redirecting it to /app would send the public homepage alias to a noindex page.
+  //
+  // 308, not 301: the portal opens in-portal pages with POST, and 301/302 let a client rewrite that
+  // to GET. 308 preserves the method and body.
   routeRules: {
-    '/index.html': { redirect: { to: '/app', statusCode: 301 } },
-    '/install.html': { redirect: { to: '/install', statusCode: 301 } },
-    '/handler/uf.smart-link.html': { redirect: { to: '/handler/uf.smart-link', statusCode: 301 } },
-    '/slider/app-options.html': { redirect: { to: '/slider/app-options', statusCode: 301 } },
-    '/slider/feedback.html': { redirect: { to: '/slider/feedback', statusCode: 301 } }
+    '/smart-link/index.html': { redirect: { to: '/app', statusCode: 308 } },
+    '/smart-link/install.html': { redirect: { to: '/install', statusCode: 308 } },
+    '/smart-link/handler/uf.smart-link.html': { redirect: { to: '/handler/uf.smart-link', statusCode: 308 } },
+    '/smart-link/slider/app-options.html': { redirect: { to: '/slider/app-options', statusCode: 308 } },
+    '/smart-link/slider/feedback.html': { redirect: { to: '/slider/feedback', statusCode: 308 } },
+    '/install.html': { redirect: { to: '/install', statusCode: 308 } },
+    '/handler/uf.smart-link.html': { redirect: { to: '/handler/uf.smart-link', statusCode: 308 } },
+    '/slider/app-options.html': { redirect: { to: '/slider/app-options', statusCode: 308 } },
+    '/slider/feedback.html': { redirect: { to: '/slider/feedback', statusCode: 308 } }
   },
 
   nitro: {
+    // Pinned rather than left to the default: the whole deploy story (one process serving the
+    // landing, the in-portal pages and /api/*) depends on this preset, so it should not follow a
+    // default that could change or be overridden by a platform env var.
+    preset: 'node-server',
     prerender: {
       // Landing + in-portal pages as real static HTML (the landing needs indexable content;
       // in-portal pages are static shells that init the B24 frame client-side). /install is the
@@ -65,6 +82,19 @@ export default defineNuxtConfig({
       routes: ['/', '/app', '/install', '/handler/uf.smart-link', '/slider/app-options', '/slider/feedback']
     }
   },
+  hooks: {
+    // Splitting the SDK out of the entry chunk keeps it off the landing's critical path, but Nuxt
+    // still emits `<link rel="prefetch">` for it, so a visitor who will never open a portal still
+    // downloads ~300 KB on idle. The landing has no in-app navigation to speed up (it renders no
+    // NuxtLink), so route prefetching buys nothing here — drop the hints and let each in-portal
+    // page fetch its own chunks, which it does anyway on first paint.
+    'build:manifest'(manifest) {
+      for (const entry of Object.values(manifest)) {
+        entry.prefetch = false
+      }
+    }
+  },
+
   vite: {
     plugins: [
       tailwindcss()

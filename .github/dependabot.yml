@@ -1,7 +1,8 @@
 version: 2
 
 # Dependency updates for SmartLinks. Single Nuxt app at the repo root (npm) + GitHub Actions.
-# No Docker image here — the app ships as a static archive, not a container (see docs/PROJECT_MAP.md).
+# No Docker image here — the app is deployed as a served Node process (see docs/DEPLOY_VIBECODE.md);
+# the static archive is a legacy fallback.
 
 updates:
   # App npm deps (root package.json).

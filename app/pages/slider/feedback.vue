@@ -57,11 +57,16 @@ function initFrame() {
   // srcdoc — serialise them instead of interpolating raw, so a value containing a quote or a
   // closing script tag cannot break out of the string or the script element.
   const js = (value: unknown): string => JSON.stringify(value ?? '').replace(/[<]/g, '\\u003C')
+  // Same treatment for the configured form values: they come from NUXT_PUBLIC_* rather than from a
+  // user, so this is not an external attack path — but a stray quote in an env var would otherwise
+  // break out of the attribute or the script and get baked into the prerendered page.
+  const attr = (value: unknown): string => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
 
   iframe.srcdoc = `<!doctype html>
 			<meta charset="utf-8">
 			<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-			<body><div class=""></div><script data-b24-form="inline/${B24FormConfig.formId}/${B24FormConfig.secret}" data-skip-moving="true">
+			<body><div class=""></div><script data-b24-form="inline/${attr(B24FormConfig.formId)}/${attr(B24FormConfig.secret)}" data-skip-moving="true">
 				window.addEventListener('b24:form:init', (event) =>
 				{
 					const form = event.detail.object;
@@ -85,7 +90,7 @@ function initFrame() {
 				(function(w,d,u){
 					const s=d.createElement('script');s.async=true;s.src=u+'?'+(Date.now()/180000|0);
 					const h=d.getElementsByTagName('script')[0];h.parentNode.insertBefore(s,h);
-				})(window,document,'${B24FormConfig.loaderScript}');
+				})(window,document,${js(B24FormConfig.loaderScript)});
       <${'/script'}><${'/body'}>`
 
   frameContainer.value?.appendChild(iframe)
@@ -108,7 +113,7 @@ onMounted(async () => {
 
     $b24 = await initB24Frame()
     if (!$b24) {
-      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+      throw new FrameUnavailableError('Bitrix24 frame is not available (opened outside a portal)')
     }
     await initApp($b24, localesI18n, setLocale)
 

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { normaliseHost, isSafeB24Domain, isAuthRejection } from '~~/server/utils/b24Rest'
+import { B24_ZONES, normaliseHost, isSafeB24Domain, isAuthRejection } from '~~/server/utils/b24Rest'
 import { extractFrameAuth } from '~~/server/utils/frameAuth'
 
 describe('normaliseHost', () => {
@@ -22,8 +22,34 @@ describe('isSafeB24Domain', () => {
     expect(isSafeB24Domain('user@company.bitrix24.by')).toBe(false)
     expect(isSafeB24Domain('bitrix24.by')).toBe(false)
     expect(isSafeB24Domain('')).toBe(false)
-    // Anchored on `bitrix24.<tld>$`, so a look-alike suffix is rejected.
+    // Matched on `.<zone>` suffix, so a look-alike suffix is rejected.
     expect(isSafeB24Domain('company.bitrix24.by.evil.com')).toBe(false)
+    // …and so is a look-alike PREFIX, which a bare suffix check would let through.
+    expect(isSafeB24Domain('evilbitrix24.ru')).toBe(false)
+  })
+
+  it('rejects a zone Bitrix does not own (a free TLD anyone can register)', () => {
+    // The host would answer our own verification call, so an open `bitrix24.<any tld>` pattern
+    // would let an attacker mint arbitrary portal keys.
+    expect(isSafeB24Domain('a.bitrix24.top')).toBe(false)
+    expect(isSafeB24Domain('a.bitrix24.shop')).toBe(false)
+    expect(isSafeB24Domain('a.bitrix24.xyz')).toBe(false)
+  })
+
+  it('accepts a zone added through B24_EXTRA_ZONES (escape hatch for a zone we missed)', () => {
+    const env = { B24_EXTRA_ZONES: 'bitrix24.example, bitrix24.test' }
+    expect(isSafeB24Domain('company.bitrix24.example', env)).toBe(true)
+    expect(isSafeB24Domain('company.bitrix24.test', env)).toBe(true)
+    expect(isSafeB24Domain('company.bitrix24.other', env)).toBe(false)
+    // The extra zone still has to be a real subdomain, and still cannot carry a port/userinfo.
+    expect(isSafeB24Domain('bitrix24.example', env)).toBe(false)
+    expect(isSafeB24Domain('company.bitrix24.example:8080', env)).toBe(false)
+  })
+
+  it('accepts every documented zone as a portal subdomain', () => {
+    for (const zone of B24_ZONES) {
+      expect(isSafeB24Domain(`company.${zone}`)).toBe(true)
+    }
   })
 })
 
