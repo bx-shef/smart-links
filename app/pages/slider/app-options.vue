@@ -20,7 +20,7 @@ const toast = useToast()
 const { $logger, moduleId, initApp, destroyB24Helper, usePullClient, startPullClient, processErrorGlobal } = useAppInit('SliderAppOptionsPage')
 const appSettings = useAppSettingsStore()
 const user = useUserStore()
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 
 const ufCode = ref('')
@@ -81,6 +81,14 @@ const errors = computed(() => ({
 }))
 
 const canSave = computed(() => !errors.value.ufDestination && !errors.value.entityTypeId && !errors.value.customFilter)
+
+// Errors are only SHOWN once the admin has tried to save. Rendering them eagerly meant a freshly
+// opened settings slider greeted the admin with a red «укажите код поля-приёмника» before they had
+// typed anything — the empty state is not a mistake yet.
+const submitted = ref(false)
+const shownErrors = computed(() => (submitted.value
+  ? errors.value
+  : { ufDestination: undefined, entityTypeId: undefined, customFilter: undefined }))
 // endregion ////
 
 // region Actions ////
@@ -126,6 +134,7 @@ function setupEntityModeWatch() {
 }
 
 async function makeSave() {
+  submitted.value = true
   if (!canSave.value) {
     toast.add({
       title: t('page.app-options.error.title'),
@@ -196,7 +205,7 @@ async function makeSendPullCommand(command: string, params: Record<string, any> 
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/slider/app-options.html'
+      clearErrorHref: '/slider/app-options'
     })
   }
 }
@@ -215,7 +224,10 @@ onMounted(async () => {
   try {
     page.isLoading = true
 
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new FrameUnavailableError('Bitrix24 frame is not available (opened outside a portal)')
+    }
     await initApp($b24, localesI18n, setLocale)
 
     if (!user.isAdmin) {
@@ -234,7 +246,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/slider/app-options.html'
+      clearErrorHref: '/slider/app-options'
     })
   } finally {
     page.isLoading = false
@@ -259,7 +271,7 @@ onUnmounted(() => {
       <B24FormField
         :label="$t('page.app-options.form.ufDestination.label')"
         :help="$t('page.app-options.form.ufDestination.help')"
-        :error="errors.ufDestination"
+        :error="shownErrors.ufDestination"
         required
       >
         <B24Input
@@ -282,7 +294,7 @@ onUnmounted(() => {
       <B24FormField
         :label="$t('page.app-options.form.entityTypeId.label')"
         :help="$t('page.app-options.form.entityTypeId.help')"
-        :error="errors.entityTypeId"
+        :error="shownErrors.entityTypeId"
         required
       >
         <B24Select
@@ -329,7 +341,7 @@ onUnmounted(() => {
       <B24FormField
         :label="$t('page.app-options.form.customFilter.label')"
         :help="$t('page.app-options.form.customFilter.help')"
-        :error="errors.customFilter"
+        :error="shownErrors.customFilter"
       >
         <B24Textarea
           v-model="customFilterText"
@@ -346,7 +358,6 @@ onUnmounted(() => {
           <B24Button
             :label="t('page.app-options.actions.save')"
             color="air-primary-success"
-            :disabled="!canSave"
             loading-auto
             @click.stop="makeSave"
           />

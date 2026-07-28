@@ -14,7 +14,7 @@ export function useAppRating() {
   const marketPath = marketDetailPath((config.public.b24MarketCode as string) || '')
   const isEnabled = marketPath !== null
 
-  // Build the API path under the app's baseURL (e.g. /smart-link/) so POST doesn't hit a redirect.
+  // Build the API path under the app's baseURL (normally '/') so POST doesn't hit a redirect.
   const base = (config.app?.baseURL ?? '/').replace(/\/$/, '')
   const apiUrl = `${base}/api/app-rating`
 

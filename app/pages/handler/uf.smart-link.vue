@@ -29,7 +29,7 @@ const { $logger, moduleId, initApp, reloadData, b24Helper, destroyB24Helper, use
 const link = useLinkStore()
 const appSettings = useAppSettingsStore()
 const user = useUserStore()
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 const isSetUfSettings = ref(true)
 const isEditMode = ref(false)
@@ -150,7 +150,7 @@ async function loadData(
           entityMode: configUfSetting.value.target.entityMode,
           entityTypeId: configUfSetting.value.target.entityTypeId,
           id: Number.parseInt(originEntity[ufDestinationCode.value]),
-          title: '????'
+          title: t('uf.smart-link.list.unavailable')
         })
         await preLoadData(isFixLoadPage)
       } else {
@@ -193,7 +193,7 @@ async function loadData(
           entityMode: configUfSetting.value.target.entityMode,
           entityTypeId: configUfSetting.value.target.entityTypeId,
           id: Number.parseInt(originEntity[ufDestinationCode.value]),
-          title: '????'
+          title: t('uf.smart-link.list.unavailable')
         })
         await preLoadData(isFixLoadPage)
       } else {
@@ -360,7 +360,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     if (isFixLoadPage) {
@@ -504,7 +504,7 @@ async function makeAddLink(entity: EntityItem) {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     page.isLoading = false
@@ -550,7 +550,7 @@ async function makeUnLink() {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     page.isLoading = false
@@ -595,7 +595,10 @@ onMounted(async () => {
   try {
     page.isLoading = true
 
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new FrameUnavailableError('Bitrix24 frame is not available (opened outside a portal)')
+    }
     await initApp($b24, localesI18n, setLocale)
 
     link.setB24($b24)
@@ -624,7 +627,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link.html'
+      clearErrorHref: '/handler/uf.smart-link'
     })
   } finally {
     page.isLoading = false
@@ -646,19 +649,19 @@ onUnmounted(() => {
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"
         :b24ui="{ descriptionWrapper: 'w-full' }"
-        :avatar="{ src: '../avatar/assistant.png' }"
+        :avatar="{ src: '/avatar/assistant.png' }"
       >
         <ProseH4>{{ $t('uf.smart-link.error.edit-mode.title') }}</ProseH4>
         <ProseP small>{{ $t('uf.smart-link.error.edit-mode.line1') }}</ProseP>
         <ProseP small>{{ $t('uf.smart-link.error.edit-mode.line2') }}</ProseP>
       </B24Advice>
     </div>
-    <div v-if="!isSetUfSettings" class="flex flex-col items-center justify-center h-screen">
+    <div v-else-if="!isSetUfSettings" class="flex flex-col items-center justify-center h-screen">
       <B24Advice
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"
         :b24ui="{ descriptionWrapper: 'w-full' }"
-        :avatar="{ src: '../avatar/assistant.png' }"
+        :avatar="{ src: '/avatar/assistant.png' }"
       >
         <ProseH5>{{ $t('uf.smart-link.error.no-settings.title') }}</ProseH5>
         <ProseP small>{{ $t('uf.smart-link.error.no-settings.line1') }}</ProseP>
@@ -675,75 +678,72 @@ onUnmounted(() => {
     <template v-else>
       <div class="relative overflow-hidden">
         <div v-if="link.isEmpty" class="h-[245px]">
-          <div v-if="page.isLoading">
-            <ProseP>{{ $t('uf.smart-link.list.loading') }}</ProseP>
-          </div>
-          <template v-else>
-            <B24TableWrapper
-              size="xs"
-              class="overflow-x-auto w-full h-[235px] bg-white"
-              pin-rows
-              :row-hover="listEntity.length > 0"
-              bordered
-              rounded
-            >
-              <table>
-              <colgroup>
-                <col style="min-width: 30px" >
-                <col >
-              </colgroup>
-              <thead>
-                <tr>
-                  <th colspan="3">
-                    <B24ButtonGroup size="xs">
-                      <B24Button
-                        :icon="DocumentPlusIcon"
-                        color="air-selection"
-                        @click.stop="addNewEntity"
-                      />
-                      <B24Input
-                        v-model="filterTitle"
-                        :placeholder="$t('uf.smart-link.list.searchPlaceholder')"
-                        @keyup.enter="preLoadData(true)"
-                      />
-                      <B24Button
-                        loading-auto
-                        :label="$t('uf.smart-link.list.search')"
-                        @click="preLoadData(true)"
-                      />
-                      <B24Button
-                        loading-auto
-                        :icon="RefreshIcon"
-                        @click="preLoadData(true)"
-                      />
-                    </B24ButtonGroup>
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="listEntity.length < 1">
-                  <td colspan="2">
-                    <B24Alert
-                      class="mt-[4px]"
-                      size="sm"
-                      color="air-secondary-alert"
-                      :description="$t('uf.smart-link.list.empty')"
+          <B24TableWrapper
+            size="xs"
+            class="overflow-x-auto w-full h-[235px] bg-white"
+            pin-rows
+            :row-hover="listEntity.length > 0"
+            bordered
+            rounded
+          >
+            <table>
+            <colgroup>
+              <col style="min-width: 30px" >
+              <col >
+            </colgroup>
+            <thead>
+              <tr>
+                <th colspan="3">
+                  <B24ButtonGroup size="xs">
+                    <B24Button
+                      :icon="DocumentPlusIcon"
+                      color="air-selection"
+                      :aria-label="$t('uf.smart-link.list.createAria')"
+                      @click.stop="addNewEntity"
                     />
-                  </td>
-                </tr>
-                <template
-                  v-for="(entity) in listEntity"
-                  :key="entity.id"
-                >
-                <tr>
-                  <td><B24Link is-action @click="makeOpenLinkById(entity)">{{ entity.id }}</B24Link></td>
-                  <td><div class="cursor-pointer" @click="makeAddLink(entity)">{{ entity.title }}</div></td>
-                </tr>
-                </template>
-              </tbody>
-              </table>
-            </B24TableWrapper>
-          </template>
+                    <B24Input
+                      v-model="filterTitle"
+                      :placeholder="$t('uf.smart-link.list.searchPlaceholder')"
+                      @keyup.enter="preLoadData(true)"
+                    />
+                    <B24Button
+                      loading-auto
+                      :label="$t('uf.smart-link.list.search')"
+                      @click="preLoadData(true)"
+                    />
+                    <B24Button
+                      loading-auto
+                      :icon="RefreshIcon"
+                      :aria-label="$t('uf.smart-link.list.refreshAria')"
+                      @click="preLoadData(true)"
+                    />
+                  </B24ButtonGroup>
+                </th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr v-if="listEntity.length < 1">
+                <td colspan="2">
+                  <B24Alert
+                    class="mt-[4px]"
+                    size="sm"
+                    color="air-secondary"
+                    :description="$t('uf.smart-link.list.empty')"
+                  />
+                </td>
+              </tr>
+              <template
+                v-for="(entity) in listEntity"
+                :key="entity.id"
+              >
+              <tr>
+                <td><B24Link is-action @click="makeOpenLinkById(entity)">{{ entity.id }}</B24Link></td>
+                <td><B24Link is-action @click="makeAddLink(entity)">{{ entity.title }}</B24Link></td>
+              </tr>
+              </template>
+            </tbody>
+            </table>
+          </B24TableWrapper>
         </div>
         <div v-else class="h-[65px] flex flex-row items-start justify-between gap-[8px]">
           <div class="flex flex-col gap-[4px]">
@@ -761,6 +761,7 @@ onUnmounted(() => {
               color="air-tertiary-no-accent"
               :icon="DeleteHyperlinkIcon"
               loading-auto
+              :aria-label="$t('uf.smart-link.list.unlinkAria')"
               @click="makeUnLink"
             />
           </div>

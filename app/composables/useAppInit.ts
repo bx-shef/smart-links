@@ -14,9 +14,6 @@ export interface ProcessErrorData {
   homePageTitle?: string
 }
 
-const { initB24Helper, getB24Helper, destroyB24Helper: destroyB24HelperOry, usePullClient, useSubscribePullClient, startPullClient } = useB24Helper()
-const isInitB24Helper = ref(false)
-
 const moduleId = 'main'
 
 /**
@@ -24,10 +21,17 @@ const moduleId = 'main'
  * Coordinates data loading via batch request
  */
 export const useAppInit = (loggerTitle?: string) => {
+  // Resolved per call (not at module scope): with SSR enabled, module-level state would become a
+  // cross-request singleton on the server.
+  const { initB24Helper, getB24Helper, destroyB24Helper: destroyB24HelperOry, usePullClient, useSubscribePullClient, startPullClient } = useB24Helper()
+  const isInitB24Helper = ref(false)
+
   const $logger = LoggerBrowser.build(
     loggerTitle ?? 'App',
     import.meta.dev
   )
+
+  const { t } = useI18n()
 
   // Stores
   const appSettings = useAppSettingsStore()
@@ -140,6 +144,26 @@ export const useAppInit = (loggerTitle?: string) => {
   ) {
     $logger.error(error)
 
+    // "No frame" is not a failure of the app — it means the page was opened outside a portal. Show
+    // the instruction and a link to the landing, and ignore the caller's error options: they are
+    // tuned for in-portal faults and would hide the only useful way out while offering a retry that
+    // reloads the same frameless page.
+    if (error instanceof FrameUnavailableError) {
+      showError({
+        statusCode: 503,
+        statusMessage: t('error.notInPortalTitle'),
+        data: {
+          description: t('error.notInPortal'),
+          homePageIsHide: false,
+          homePageHref: '/',
+          isShowClearError: false
+        },
+        cause: error,
+        fatal: true
+      })
+      return
+    }
+
     let title = 'Error'
     let description = ''
 
@@ -159,7 +183,7 @@ export const useAppInit = (loggerTitle?: string) => {
         description: description,
         homePageIsHide: true,
         isShowClearError: true,
-        clearErrorHref: '/main'
+        clearErrorHref: '/app'
       }, (processErrorData ?? {})),
       cause: error,
       fatal: true

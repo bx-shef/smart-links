@@ -1,12 +1,13 @@
 <script setup lang="ts">
 import { ref, onMounted, onUnmounted } from 'vue'
 import { usePageStore } from '~/stores/page'
-import B24FormConfig from '~/config.b24form'
+import { useB24FormConfig } from '~/config.b24form'
 import { Type } from '@bitrix24/b24jssdk'
 import type { B24Frame } from '@bitrix24/b24jssdk'
 
 const { locales: localesI18n, setLocale } = useI18n()
 const page = usePageStore()
+const B24FormConfig = useB24FormConfig()
 
 definePageMeta({
   layout: 'slider-feedback'
@@ -14,7 +15,7 @@ definePageMeta({
 
 // region Init ////
 const { $logger, initApp, b24Helper, destroyB24Helper, processErrorGlobal } = useAppInit('FeedbackSlider')
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 
 let iframe: null | HTMLIFrameElement = null
@@ -52,34 +53,44 @@ function initFrame() {
    * - hostname: "xxx.bitrix24.com"
    * - hosturl: "https://xxx.bitrix24.com"
    */
+  // Portal-supplied values (user name, host, plan…) are embedded into JS inside the iframe's
+  // srcdoc — serialise them instead of interpolating raw, so a value containing a quote or a
+  // closing script tag cannot break out of the string or the script element.
+  const js = (value: unknown): string => JSON.stringify(value ?? '').replace(/[<]/g, '\\u003C')
+  // Same treatment for the configured form values: they come from NUXT_PUBLIC_* rather than from a
+  // user, so this is not an external attack path — but a stray quote in an env var would otherwise
+  // break out of the attribute or the script and get baked into the prerendered page.
+  const attr = (value: unknown): string => String(value ?? '')
+    .replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
   iframe.srcdoc = `<!doctype html>
 			<meta charset="utf-8">
 			<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
-			<body><div class=""></div><script data-b24-form="inline/${B24FormConfig.formId}/${B24FormConfig.secret}" data-skip-moving="true">
+			<body><div class=""></div><script data-b24-form="inline/${attr(B24FormConfig.formId)}/${attr(B24FormConfig.secret)}" data-skip-moving="true">
 				window.addEventListener('b24:form:init', (event) =>
 				{
 					const form = event.detail.object;
 
 					if(Number(form.identification.id) === Number(${B24FormConfig.formId}))
 					{
-						form.setProperty('hostname', '${propertiesForB24Form?.hostname}');
-						form.setProperty('app_code', '${propertiesForB24Form?.app_code}');
-						form.setProperty('app_status', '${propertiesForB24Form?.app_status}');
-						form.setProperty('payment_expired', '${propertiesForB24Form?.payment_expired}');
-						form.setProperty('days', '${propertiesForB24Form?.days}');
-						form.setProperty('b24_plan', '${propertiesForB24Form?.b24_plan}');
+						form.setProperty('hostname', ${js(propertiesForB24Form?.hostname)});
+						form.setProperty('app_code', ${js(propertiesForB24Form?.app_code)});
+						form.setProperty('app_status', ${js(propertiesForB24Form?.app_status)});
+						form.setProperty('payment_expired', ${js(propertiesForB24Form?.payment_expired)});
+						form.setProperty('days', ${js(propertiesForB24Form?.days)});
+						form.setProperty('b24_plan', ${js(propertiesForB24Form?.b24_plan)});
 					}
 
 					form.setValues({
-						'name': '${propertiesForB24Form?.c_name}',
-						'last-name': '${propertiesForB24Form?.c_last_name}',
+						'name': ${js(propertiesForB24Form?.c_name)},
+						'last-name': ${js(propertiesForB24Form?.c_last_name)},
 					});
 				});
 
 				(function(w,d,u){
 					const s=d.createElement('script');s.async=true;s.src=u+'?'+(Date.now()/180000|0);
 					const h=d.getElementsByTagName('script')[0];h.parentNode.insertBefore(s,h);
-				})(window,document,'${B24FormConfig.loaderScript}');
+				})(window,document,${js(B24FormConfig.loaderScript)});
       <${'/script'}><${'/body'}>`
 
   frameContainer.value?.appendChild(iframe)
@@ -100,7 +111,10 @@ onMounted(async () => {
       throw new Error('You need to specify the parameters of your form')
     }
 
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new FrameUnavailableError('Bitrix24 frame is not available (opened outside a portal)')
+    }
     await initApp($b24, localesI18n, setLocale)
 
     initFrame()
@@ -110,7 +124,7 @@ onMounted(async () => {
     processErrorGlobal(error, {
       homePageIsHide: true,
       isShowClearError: false,
-      clearErrorHref: '/slider/feedback.html'
+      clearErrorHref: '/slider/feedback'
     })
   } finally {
     page.isLoading = false

@@ -1,13 +1,14 @@
 # Как работает «Умные ссылки» (SmartLinks) — описание процесса
 
-> Last reviewed: 2026-07-26
+> Last reviewed: 2026-07-28
 
-Приложение Bitrix24 «Умные ссылки». Издатель — ИП Шевчик И.С. Это **клиентское**
-(`ssr: false`) Nuxt 4-приложение, которое собирается в статику и упаковывается в
-**архив** для загрузки в портал как локальное/маркет-приложение. Весь код исполняется
-**внутри iframe портала** (обёртка `@bitrix24/b24jssdk` → `B24Frame`); своего сервера/БД у
-приложения нет — состояние хранится в опциях приложения на стороне портала
-(`app.option.*`), обмен в реальном времени — через pull.
+Приложение Bitrix24 «Умные ссылки». Издатель — ИП Шевчик И.С. **Nuxt 4 + Nitro**: один
+процесс отдаёт публичный лендинг (`/`), in-portal-страницы и `/api/*`. Все маршруты
+**пререндерятся** в реальный HTML, а Bitrix24-фрейм поднимается **на клиенте** — поэтому
+in-portal-код исполняется **внутри iframe портала** (обёртка `@bitrix24/b24jssdk` →
+`B24Frame`): настройки поля хранятся в опциях приложения на стороне портала
+(`app.option.*`), обмен в реальном времени — через pull. Серверная часть держит состояние
+попапа оценки в Postgres (без `DATABASE_URL` — инертна). Упаковка в архив — легаси-фолбэк.
 
 ## Суть продукта
 
@@ -19,47 +20,56 @@
 
 В карточке пользователь может:
 
-- **найти** кандидатов для связи (поиск по названию/ID, с автоматическим фильтром по
-  компании/контакту исходной сущности);
+- **найти** кандидатов для связи (поиск по названию/ID; фильтр по компании/контакту исходной
+  сущности — **опционален**, включается в настройках поля, по умолчанию выключен);
 - **привязать** выбранную целевую сущность (её ID пишется в UF-поле-приёмник);
-- **открыть** связанную сущность в слайдере;
-- **создать** новую целевую сущность с предзаполнением;
+- **открыть** связанную сущность (CRM — в слайдере, элемент Списка — в новой вкладке);
+- **создать** новую целевую сущность (для Списков — с предзаполнением компании/контакта; для
+  CRM предзаполнение пока не реализовано, `@todo` в обработчике);
 - **отвязать** текущую связь.
+
+⚠ **Поддерживаемые цели.** `entityMode` — `crm` или `lists`. В режиме `crm` резолверы путей
+(`appSettings.getTargetPath`/`getNewTargetPath`) сейчас поддерживают **только Сделку**
+(`EnumCrmEntityTypeId.deal`); редактор настроек соответственно предлагает один CRM-тип. Другие
+CRM-сущности требуют расширения резолверов.
 
 **Скоупы приложения:** `user_brief`, `crm`, `list`, `placement`, `userfieldconfig`, `pull`.
 
 ## Раскладка (что где)
 
-- `app/` — Nuxt (авто-импорт): `pages` (генерятся в статические `*.html`) / `layouts` /
+- `app/` — Nuxt (авто-импорт): `pages` (пререндерятся в статический HTML) / `layouts` /
   `components` / `composables` / `stores` (Pinia) / `middleware` / `utils` / `assets`.
 - `shared/types/base.d.ts` — общие типы (`UfSmartLinkType`, `IStep`).
 - `i18n/` — локали (`ru`) + карта локалей + опции.
 - `public/` — статика (аватары советника, favicon, robots).
 - `tools/` — оффлайн-инструменты: перевод локалей и упаковка архива для B24.
 - `template/` — HTML-шаблон загрузчика dev-сервера.
-- `server/tsconfig.json` — только конфиг типов (полноценного сервера у приложения нет).
+- `server/` — Nitro: `api/` (`health`, `app-rating` get/post), `utils/` (верификация фрейм-токена,
+  политика и хранилище рейтинга), `db/` (`pg`-пул, схема `app_rating`), `plugins/migrate.ts`.
 
 ## Страницы и роли
 
-Все страницы — client-only (`*.html.client.vue`), после `generate` превращаются в
-статические `*.html`, на которые ссылается портал.
+Все страницы **пререндерятся** в реальный HTML; Bitrix24-фрейм поднимается на клиенте
+(`onMounted`), поэтому страницы открываются и вне портала. Публичный лендинг на `/`
+(`pages/index.vue`, `layout: false`) фрейм не инициализирует вовсе — он индексируется поисковиками.
 
 | Страница | Плейсмент/место | Что делает |
 |---|---|---|
-| `pages/index.html` | стартовая (левое меню портала) | Приветствие + кнопка открыть список UF-полей для Сделок. |
-| `pages/install.html` | установка | Мастер установки: шаги `init → demo → userFields → finish`. На шаге `userFields` регистрирует тип поля (`userfieldtype.delete` + `userfieldtype.add`), на `finish` — `installFinish()` c конфетти. |
-| `pages/handler/uf.smart-link.html` | обработчик UF-типа (в карточке) | Главная логика поля: читает конфиг, грузит источник и цель, показывает ссылку/подбор, выполняет действия. |
-| `pages/slider/app-options.html` | слайдер настроек приложения | Редактор настроек поля (**только админ**). Сохраняет `app.option.set` и рассылает pull. ⚠ Сейчас — заглушка (`@todo`). |
-| `pages/slider/feedback.html` | слайдер обратной связи | Встраивает CRM-форму Bitrix24 в iframe, прокидывает свойства портала. |
+| `pages/index.vue` (`/`) | публичный лендинг (вне портала) | Маркетинговая страница: что делает приложение, как работает, издатель. |
+| `pages/app.vue` (`/app`) | стартовая (левое меню портала) | Приветствие + кнопка открыть список UF-полей для Сделок. |
+| `pages/install.vue` (`/install`) | установка | Мастер установки: шаги `init → demo → userFields → finish`. На шаге `userFields` регистрирует тип поля (`userfieldtype.delete` + `userfieldtype.add`), на `finish` — `installFinish()` c конфетти. |
+| `pages/handler/uf.smart-link.vue` | обработчик UF-типа (в карточке) | Главная логика поля: читает конфиг, грузит источник и цель, показывает ссылку/подбор, выполняет действия. |
+| `pages/slider/app-options.vue` | слайдер настроек приложения | Редактор настроек поля (**только админ**). Сохраняет `app.option.set` и рассылает pull. |
+| `pages/slider/feedback.vue` | слайдер обратной связи | Встраивает CRM-форму Bitrix24 в iframe, прокидывает свойства портала. |
 
 ## Процесс: установка
 
-`pages/install.html` проходит шаги последовательно:
+Страница установки (`/install`) проходит шаги последовательно:
 
 1. `init` — подготовка.
 2. `demo` — заглушка примеров.
 3. `userFields` — регистрирует тип поля: `userfieldtype.add` с
-   `USER_TYPE_ID = type_smart_link_<dev|prod>`, `HANDLER = <appUrl>handler/uf.smart-link.html`,
+   `USER_TYPE_ID = type_smart_link_<dev|prod>`, `HANDLER = <appUrl>handler/uf.smart-link`,
    `TITLE = [dev|prod] SmartLink`, `OPTIONS.height = 65`. Перед добавлением — `userfieldtype.delete`
    (идемпотентность). `appUrl` вычисляется из текущего URL страницы установки.
 4. `finish` — прогресс 100%, конфетти, `installFinish()`.
@@ -97,8 +107,9 @@
 - `makeUnLink()` — очищает `ufDestination` через `crm.item.update`.
 - `makeOpenLink` / `makeOpenLinkById` — открывает целевую сущность: `slider.openPath` для
   CRM, `window.open` для Списков.
-- `addNewEntity()` — открывает форму создания целевой сущности с предзаполнением полей
-  компании/контакта (для Списков — через query-параметры и отслеживание закрытия окна).
+- `addNewEntity()` — открывает форму создания целевой сущности. Для Списков предзаполняет
+  компанию/контакт через query-параметры и отслеживает закрытие окна; для CRM открывает форму
+  без подстановки (`@todo` в обработчике).
 
 **Реалтайм:** обработчик подписывается на pull-команду `reload.options` (модуль `main`);
 при её получении перечитывает опции приложения и данные поля. Команду рассылает страница
@@ -114,10 +125,11 @@
 через `appSettings.saveSettings()` → `app.option.set { configUfListSettings }`, затем
 рассылает pull `reload.options`, чтобы открытые карточки перечитали конфиг.
 
-> ⚠ **Текущее состояние — заглушка.** UI редактора не реализован (`@todo`); конфиг задаётся
-> руками в `app/stores/appSettings.ts`, а загрузка сохранённого конфига из опций в
-> `initFromBatch` закомментирована. Это ключевой незакрытый кусок продукта — см.
-> [`PROJECT_MAP.md`](PROJECT_MAP.md).
+Редактор реализован (b24ui-форма: поле-приёмник, режим цели `crm`/`lists`, ID сущности/инфоблока,
+поля сопоставления, свитчи фильтров, доп. фильтр JSON) с валидацией. Конфиг **загружается из опций
+портала** (`initFromBatch` → `appOptions.getJsonObject('configUfListSettings')`), захардкоженных
+дефолтов конкретного портала больше нет. Дальнейшие улучшения (пикеры полей вместо ручного ввода
+кодов) — см. [`PROJECT_MAP.md`](PROJECT_MAP.md).
 
 ## Модель конфигурации (`UfSmartLinkType`)
 
@@ -138,7 +150,7 @@
   сущностям + `saveSettings`), `link` (текущая целевая ссылка), `page` (title/description/
   isLoading), `user` (`login`/`isAdmin`).
 - `middleware/01.app.page.or.slider.global.ts` — по `placement.options.place` роутит на
-  страницу слайдера (`app-options`/`feedback`/`main`).
+  страницу слайдера (`app-options`/`feedback`).
 - Обратная связь (`slider/feedback`) — CRM-форма Bitrix24 в iframe по
   `b24FormId`/`b24FormSecret`/`b24FormLoaderScript` (env `NUXT_PUBLIC_B24_FORM_*`), с
   прокидыванием свойств портала (домен, статус приложения, план, дни).
@@ -149,34 +161,64 @@
 Инструмент `tools/translate.ui.ts` умеет доперевести локали через DeepSeek (OpenAI SDK,
 `DEEPSEEK_API_KEY`) — оффлайн, в рантайм не входит.
 
-## Сборка и упаковка в архив B24
+## Сборка и деплой
 
-Приложение отдаётся порталу как статический архив:
+**Основной путь — served-процесс** (Nitro, цель — Black Hole/Маркет): один процесс отдаёт
+лендинг `/`, in-portal-страницы (`/app`, `/install`, `/handler/…`, `/slider/…`) и
+`/api/*`.
 
 ```bash
-pnpm generate                 # SSG-сборка в .output/public
-pnpm tools:fix-paths          # переписывает пути под baseURL портала (/smart-link/)
-pnpm tools:create-archive     # zip .output/public → .output/archiverForB24.zip
-# всё вместе:
-pnpm generate-archive-for-b24
+pnpm build                    # served-сборка (preset node-server)
+node .output/server/index.mjs # /, /app, /install, /handler/uf.smart-link, /slider/*, /api/*
 ```
 
-- `tools/fix-paths.mjs` — заменяет `dev-folder`-пути на относительные и вычисляет `baseURL`
-  из `window.location.pathname` (портал монтирует приложение по своему пути).
-- `tools/create-archive.mjs` — пакует `.output/public` в zip (`archiver`) для загрузки в
-  портал.
+⚠ **Пути приложения в настройках портала:** путь приложения — `https://<host>/app`,
+установочный — `https://<host>/install`. Указывать корень домена **нельзя** — там публичный
+лендинг, который намеренно не инициализирует B24-фрейм.
+
+**Архивный путь (легаси-фолбэк)** — статический архив для локального приложения:
+
+```bash
+pnpm generate-archive-for-b24  # generate → fix-paths → create-archive
+```
+
+- `tools/create-archive.mjs` — пакует `.output/public` в zip (`archiver`).
+- ⚠ `tools/fix-paths.mjs` ищет маркер `dev-folder`, которого текущая сборка **не производит**
+  (`buildAssetsDir` не переопределён) → утилита фактически **инертна**, и архив содержит
+  абсолютные пути от корня. Архивный путь требует починки и живой проверки на портале, прежде
+  чем им пользоваться; served-деплой это не затрагивает.
 
 ## Стек
 
-Nuxt 4 (`ssr: false`), `@bitrix24/b24ui-nuxt`, `@bitrix24/b24jssdk(-nuxt)`,
-`@bitrix24/b24icons-vue`, `@nuxtjs/i18n`, `@pinia/nuxt`, `@unovis/vue` (графики),
-`luxon`, Tailwind CSS (через `@tailwindcss/vite`). Инструменты разработки: ESLint
+Nuxt 4 + Nitro (пререндер маршрутов, preset `node-server`), `pg`, `@bitrix24/b24ui-nuxt`,
+`@bitrix24/b24jssdk`, `@bitrix24/b24icons-vue`, `@nuxtjs/i18n`, `@pinia/nuxt`,
+Tailwind CSS (через `@tailwindcss/vite`). Инструменты разработки: ESLint
 (`@nuxt/eslint`), TypeScript, `openai` + `tsx` + `consola` (для оффлайн-перевода локалей),
-`archiver` (упаковка). Пакетный менеджер — pnpm.
+`archiver` + `glob` (упаковка архива). Пакетный менеджер — pnpm.
+
+> Модуль `@bitrix24/b24jssdk-nuxt` **не** используется: его плагин импортирует SDK статически, и
+> тот уезжает в entry-чанк, который грузит публичный лендинг. Фрейм поднимает
+> `app/composables/useB24.ts` ленивым `import()`.
 
 ## Конфигурация окружения
 
-- `NUXT_PUBLIC_B24_FORM_ID` / `NUXT_PUBLIC_B24_FORM_SECRET` / `NUXT_PUBLIC_B24_FORM_LOADER_SCRIPT`
-  — CRM-форма обратной связи.
+Полный список с комментариями — в [`.env.example`](../.env.example). Ключевое:
+
+**Запекаются на СБОРКЕ** (пререндер замораживает `runtimeConfig.public` в HTML — задать только в
+рантайме недостаточно, см. таблицу в [`SERVER_MIGRATION.md`](SERVER_MIGRATION.md)):
+- `NUXT_PUBLIC_B24_FORM_ID` / `_SECRET` / `_LOADER_SCRIPT` — CRM-форма обратной связи.
+- `NUXT_PUBLIC_SITE_URL` — `canonical`/`og:url` лендинга (должен быть абсолютным http(s)-URL).
+- `NUXT_PUBLIC_B24_MARKET_CODE` — попап «оцените приложение».
+- `NUXT_PUBLIC_COMMIT_SHA` — ссылка на сборку в футере лендинга и в `/api/health`.
+
+**Рантайм (сервер):**
+- `DATABASE_URL` — Postgres для состояния попапа оценки; пусто ⇒ роуты рейтинга инертны.
+- `APP_EDGE_SECURITY` — `1`, если перед процессом нет обратного прокси (см.
+  [`DEPLOY_VIBECODE.md`](DEPLOY_VIBECODE.md)); за прокси **не** ставить.
+- `APP_EDGE_TRUST_XFF` — `1`, только если проверено, что впереди доверенный прокси.
+- `B24_EXTRA_ZONES` — дополнительные облачные зоны Б24 для SSRF-allowlist.
+
+**Оффлайн/dev:**
 - `DEEPSEEK_API_KEY` — только для `tools/translate.ui.ts` (в рантайм не попадает).
+- `B24_HOOK` — вебхук живого тест-портала; хранить в `.env.b24test` (gitignored), не в репозитории.
 - `NUXT_ALLOWED_HOSTS` — доверенные хосты для dev-туннелей (например, ngrok).

@@ -9,6 +9,15 @@ const emit = defineEmits<{
   reviewed: []
   later: []
 }>()
+
+// Dismissing with ESC / the overlay / the × is the same intent as «Позже» — route both through one
+// handler so the two paths can never drift (they already differed for anything counting dismissals).
+function onOpenChange(value: boolean) {
+  emit('update:open', value)
+  if (!value) {
+    emit('later')
+  }
+}
 </script>
 
 <template>
@@ -16,7 +25,7 @@ const emit = defineEmits<{
     :open="open"
     :title="$t('rating.title')"
     :description="$t('rating.text')"
-    @update:open="(value: boolean) => emit('update:open', value)"
+    @update:open="onOpenChange"
   >
     <template #footer>
       <div class="flex flex-row flex-wrap items-center gap-2">
@@ -34,7 +43,7 @@ const emit = defineEmits<{
         />
         <B24Button
           rounded
-          color="air-tertiary-no-accent"
+          color="link"
           :label="$t('rating.later')"
           @click.stop="emit('later')"
         />

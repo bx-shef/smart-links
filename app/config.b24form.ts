@@ -1,15 +1,18 @@
-interface B24FormConfig {
-  formId: number,
-  secret: string,
+export interface B24FormConfig {
+  formId: number
+  secret: string
   loaderScript: string
 }
 
-const config = useRuntimeConfig()
-
-const b24FormConfig: B24FormConfig = {
-  formId: Number(config.public.b24FormId) || 0,
-  secret: config.public.b24FormSecret || '',
-  loaderScript: config.public.b24FormLoaderScript || '',
-};
-
-export default b24FormConfig;
+/**
+ * Feedback CRM-form config. A FUNCTION (not a module-level const): useRuntimeConfig() needs the
+ * Nuxt context, so evaluating it at import time breaks SSR/prerender of the page that imports it.
+ */
+export function useB24FormConfig(): B24FormConfig {
+  const config = useRuntimeConfig()
+  return {
+    formId: Number(config.public.b24FormId) || 0,
+    secret: config.public.b24FormSecret || '',
+    loaderScript: config.public.b24FormLoaderScript || ''
+  }
+}
