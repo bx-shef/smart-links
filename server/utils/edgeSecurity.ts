@@ -1,3 +1,5 @@
+import { B24_ZONES } from './b24Rest'
+
 // Edge protections the app applies to ITSELF when it runs directly internet-facing with no reverse
 // proxy in front — the Bitrix24 Vibecode "Black Hole" target, where a single Nitro process answers
 // the platform tunnel on :3000. There is no nginx there to supply CSP / security headers / HSTS or a
@@ -51,8 +53,11 @@ export function rateLimitKey(trustXff: boolean, xff: string | undefined, remote:
 
 // Bitrix24 cloud domains the app must interoperate with: the portal embeds our pages in an iframe
 // (frame-ancestors) and the frame SDK talks to the portal REST endpoint (connect-src).
-const B24_HOSTS = 'https://*.bitrix24.com https://*.bitrix24.ru https://*.bitrix24.by '
-  + 'https://*.bitrix24.eu https://*.bitrix24.kz https://*.bitrix24.de https://*.bitrix24.pl'
+//
+// Derived from the SSRF allowlist rather than written out again — when the two drifted apart, a
+// portal in a zone the server accepted still could not open the app, because the browser blocked
+// the iframe on a frame-ancestors list that had never been updated.
+const B24_HOSTS = B24_ZONES.map(zone => `https://*.${zone}`).join(' ')
 
 // Default page policy. `script-src 'unsafe-inline'` is required, not laziness: Nuxt inlines the
 // prerendered `window.__NUXT__` payload, and the policy is not hash-based.

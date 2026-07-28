@@ -69,7 +69,10 @@ export function makeBareTokenCall(domain: string, accessToken: string): RestCall
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...params, auth: accessToken }),
-        signal: controller.signal
+        signal: controller.signal,
+        // Do not follow redirects: `res.ok` would then describe the FINAL response, so a host that
+        // bounces an unknown path to a 200 page would read as a successful REST call.
+        redirect: 'manual'
       })
       const json = (await readJsonCapped(res)) as
         | { result?: unknown, error?: string, error_description?: string }
@@ -79,7 +82,17 @@ export function makeBareTokenCall(domain: string, accessToken: string): RestCall
         // still classifies a bodyless 401/403 as an auth rejection.
         throw new B24RestError(json?.error ?? `http ${res.status}`, json?.error_description ?? '', res.status)
       }
-      return json?.result
+      // Demand a POSITIVE success signal, never merely "did not look like an error".
+      //
+      // This call is what PROVES a token controls a portal, and the domain it runs against comes
+      // from the client. Accepting any 2xx would let an unrelated host inside the Bitrix24 zones —
+      // one that answers an unknown path with an HTML page, or whose body is unparseable, or over
+      // the read cap — count as a verified portal: `json` would be null and this would resolve
+      // `undefined`, which the caller reads as success.
+      if (!json || typeof json !== 'object' || !('result' in json)) {
+        throw new B24RestError('malformed_rest_response', `no result envelope from ${normaliseHost(domain)}`, res.status)
+      }
+      return json.result
     } finally {
       clearTimeout(timer)
     }

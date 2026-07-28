@@ -5,6 +5,7 @@ import type { B24Frame } from '@bitrix24/b24jssdk'
 import { ref, onMounted } from 'vue'
 import { sleepAction } from '~/utils/sleep'
 import Logo from '~/components/Logo.vue'
+import { B24_BOUND_EVENTS, buildEventBindCalls, isBindableHandlerUrl, type EventBinding } from '~/utils/b24EventBind'
 
 const { t, locales: localesI18n, setLocale } = useI18n()
 
@@ -55,6 +56,30 @@ const steps = ref<Record<string, IStep>>({
     caption: t('page.install.step.demo.caption'),
     action: async () => {
       return sleepAction(1000)
+    }
+  },
+  events: {
+    caption: t('page.install.step.events.caption'),
+    action: async () => {
+      // Subscribe the server to the portal's outgoing events. Without this ONAPPUNINSTALL is never
+      // delivered, so removing the app would leave the customer's credentials with us forever and
+      // the server would never learn the portal is gone.
+      const handlerUrl = `${getBaseUrl()}api/b24/events`
+      if (!isBindableHandlerUrl(handlerUrl)) {
+        throw new Error(`Event handler URL is not absolute (${handlerUrl || 'empty'})`)
+      }
+
+      const listed = await $b24!.callMethod('event.get', {})
+      const existing = (listed.getData()?.result ?? []) as EventBinding[]
+      const { unbind, bind } = buildEventBindCalls(existing, B24_BOUND_EVENTS, handlerUrl)
+
+      // Unbinding is best-effort: a binding that is already gone is exactly the state we want.
+      if (unbind.length) {
+        await $b24!.callBatch(unbind, false)
+      }
+      if (bind.length) {
+        await $b24!.callBatch(bind, true)
+      }
     }
   },
   userFields: {

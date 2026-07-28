@@ -52,7 +52,8 @@ pnpm generate-archive-for-b24   # generate → fix-paths → create-archive
 
 ## Скоупы Bitrix24
 
-`user_brief`, `crm`, `list`, `placement`, `userfieldconfig`, `pull`.
+`user_brief`, `crm`, `lists`, `placement`, `userfieldconfig`, `pull` (именно `lists` — кода
+`list` в перечне скоупов Битрикса нет).
 
 ## Стек
 

@@ -1,13 +1,14 @@
 import { extractFrameAuth } from '../utils/frameAuth'
-import { verifyFrameToken } from '../utils/frameVerify'
+import { portalKeyForHost, verifyFrameToken } from '../utils/frameVerify'
+import { memberIdForDomain } from '../utils/tokenStore'
 import { getRatingState } from '../utils/appRatingStore'
 import { shouldPrompt } from '../utils/appRatingPolicy'
 import { allowFrameRequest } from '../utils/frameRateGuard'
 import { query, dbEnabled } from '../db/client'
 
 // GET /api/app-rating — should the in-portal «оцените приложение» modal be shown for this portal?
-// Frame-token authenticated (the per-portal key is the VERIFIED host — never trusted from the
-// client). Side-effect-free: it only READS state; the client stamps prompted_at via POST when the
+// Frame-token authenticated. The per-portal key is derived from the VERIFIED host — never trusted
+// from the client — and resolves to the installed portal's member_id where one is known. Side-effect-free: it only READS state; the client stamps prompted_at via POST when the
 // modal actually renders. Inert (show:false) outside a portal or without a DB.
 export default defineEventHandler(async (event) => {
   if (!dbEnabled()) {
@@ -26,6 +27,12 @@ export default defineEventHandler(async (event) => {
   if (!verified.ok || !verified.host) {
     return { show: false }
   }
-  const state = await getRatingState(verified.host, query)
+  const portalKey = await portalKeyForHost(verified.host, d => memberIdForDomain(d, query))
+  if (!portalKey) {
+    // The key lookup failed. Doing the work under a fallback key would split this portal's state
+    // across two rows, so skip it — this route is best-effort by design.
+    return { show: false }
+  }
+  const state = await getRatingState(portalKey, query)
   return { show: shouldPrompt(state, new Date()) }
 })
