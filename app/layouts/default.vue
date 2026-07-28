@@ -45,22 +45,22 @@ const makeOpenFeedBack = async () => {
 <template>
   <B24App :locale="locales[locale]">
     <B24SidebarLayout
-    :use-light-content="false"
-    :b24ui="{
-      container: 'px-[22px] lg:px-[22px] lg:pt-0 mt-[12px]'
-    }"
-  >
-    <template #navbar>
-      <B24NavbarSection/>
-      <B24NavbarSpacer />
-      <B24NavbarSection class="flex-row items-center justify-start gap-4">
-        <B24Button
-          :label="$t('layout.default.navbarHeader.feedback')"
-          color="air-secondary-accent"
-          size="sm"
-          @click="makeOpenFeedBack"
-        />
-      </B24NavbarSection>
+      :use-light-content="false"
+      :b24ui="{
+        container: 'px-[22px] lg:px-[22px] lg:pt-0 mt-[12px]'
+      }"
+    >
+      <template #navbar>
+        <B24NavbarSection/>
+        <B24NavbarSpacer />
+        <B24NavbarSection class="flex-row items-center justify-start gap-4">
+          <B24Button
+            :label="$t('layout.default.navbarHeader.feedback')"
+            color="air-secondary-accent"
+            size="sm"
+            @click="makeOpenFeedBack"
+          />
+        </B24NavbarSection>
     </template>
 
     <div v-if="page.isLoading">

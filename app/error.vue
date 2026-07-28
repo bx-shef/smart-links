@@ -25,7 +25,9 @@ const errorData = ref({
   clearErrorHref: (props.error?.data as any)?.clearErrorHref ?? '/app',
   clearErrorTitle: (props.error?.data as any)?.clearErrorTitle ?? 'Clear errors',
   homePageIsHide: (props.error?.data as any)?.homePageIsHide === true,
-  homePageHref: (props.error?.data as any)?.homePageHref ?? '/app',
+  // "Home" defaults to the public landing (an error can happen outside a portal); in-portal
+  // pages pass their own href via the error data.
+  homePageHref: (props.error?.data as any)?.homePageHref ?? '/',
   homePageTitle: (props.error?.data as any)?.homePageTitle ?? 'Go back home'
 })
 

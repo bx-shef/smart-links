@@ -53,6 +53,11 @@ function initFrame() {
    * - hostname: "xxx.bitrix24.com"
    * - hosturl: "https://xxx.bitrix24.com"
    */
+  // Portal-supplied values (user name, host, plan…) are embedded into JS inside the iframe's
+  // srcdoc — serialise them instead of interpolating raw, so a value containing a quote or a
+  // closing script tag cannot break out of the string or the script element.
+  const js = (value: unknown): string => JSON.stringify(value ?? '').replace(/[<]/g, '\\u003C')
+
   iframe.srcdoc = `<!doctype html>
 			<meta charset="utf-8">
 			<meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
@@ -63,17 +68,17 @@ function initFrame() {
 
 					if(Number(form.identification.id) === Number(${B24FormConfig.formId}))
 					{
-						form.setProperty('hostname', '${propertiesForB24Form?.hostname}');
-						form.setProperty('app_code', '${propertiesForB24Form?.app_code}');
-						form.setProperty('app_status', '${propertiesForB24Form?.app_status}');
-						form.setProperty('payment_expired', '${propertiesForB24Form?.payment_expired}');
-						form.setProperty('days', '${propertiesForB24Form?.days}');
-						form.setProperty('b24_plan', '${propertiesForB24Form?.b24_plan}');
+						form.setProperty('hostname', ${js(propertiesForB24Form?.hostname)});
+						form.setProperty('app_code', ${js(propertiesForB24Form?.app_code)});
+						form.setProperty('app_status', ${js(propertiesForB24Form?.app_status)});
+						form.setProperty('payment_expired', ${js(propertiesForB24Form?.payment_expired)});
+						form.setProperty('days', ${js(propertiesForB24Form?.days)});
+						form.setProperty('b24_plan', ${js(propertiesForB24Form?.b24_plan)});
 					}
 
 					form.setValues({
-						'name': '${propertiesForB24Form?.c_name}',
-						'last-name': '${propertiesForB24Form?.c_last_name}',
+						'name': ${js(propertiesForB24Form?.c_name)},
+						'last-name': ${js(propertiesForB24Form?.c_last_name)},
 					});
 				});
 

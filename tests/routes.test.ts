@@ -9,9 +9,14 @@ describe('isPublicRoute', () => {
   })
 
   it('treats in-portal pages as non-public', () => {
-    expect(isPublicRoute('/index.html')).toBe(false)
-    expect(isPublicRoute('/install.html')).toBe(false)
-    expect(isPublicRoute('/handler/uf.smart-link.html')).toBe(false)
-    expect(isPublicRoute('/slider/app-options.html')).toBe(false)
+    expect(isPublicRoute('/app')).toBe(false)
+    expect(isPublicRoute('/install')).toBe(false)
+    expect(isPublicRoute('/handler/uf.smart-link')).toBe(false)
+    expect(isPublicRoute('/slider/app-options')).toBe(false)
+    expect(isPublicRoute('/slider/feedback')).toBe(false)
+  })
+
+  it('is not fooled by a trailing slash on an in-portal route', () => {
+    expect(isPublicRoute('/app/')).toBe(false)
   })
 })

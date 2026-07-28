@@ -17,13 +17,14 @@ useHead({
 })
 
 /**
- * @memo get appUrl from url
+ * Public base URL the app is served from, used to build the UF handler URL.
+ * Derived from the app's configured baseURL — NOT from the current pathname: the install page
+ * answers on both `/install` and `/install/`, and slicing the pathname would turn the trailing-slash
+ * form into `<host>/install/handler/...` (a 404 handler registered silently).
  */
 function getBaseUrl(): string {
-  // Derive from origin+pathname (never href): a query/hash containing a slash would
-  // otherwise cut the base in the wrong place and register a broken handler URL.
-  const { origin, pathname } = window.location
-  return `${origin}${pathname.substring(0, pathname.lastIndexOf('/') + 1)}`
+  const base = useRuntimeConfig().app?.baseURL || '/'
+  return `${window.location.origin}${base.endsWith('/') ? base : `${base}/`}`
 }
 
 // region Init ////
