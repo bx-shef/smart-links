@@ -6,9 +6,11 @@ const extraAllowedHosts = (process?.env.NUXT_ALLOWED_HOSTS?.split(',').map((s: s
 
 // https://nuxt.com/docs/api/configuration/nuxt-config
 export default defineNuxtConfig({
+  // NOTE: '@bitrix24/b24jssdk-nuxt' is intentionally NOT registered — its plugin imports the
+  // B24 SDK statically, which lands in the entry chunk the public landing loads. The frame is
+  // created lazily by composables/useB24 (dynamic import), as in the reference app.
   modules: [
     '@bitrix24/b24ui-nuxt',
-    '@bitrix24/b24jssdk-nuxt',
     '@nuxt/eslint',
     '@nuxtjs/i18n',
     '@pinia/nuxt'
@@ -29,6 +31,10 @@ export default defineNuxtConfig({
       b24FormLoaderScript: '',
       // Bitrix24 Market listing code; empty => rating prompt disabled (fail-safe).
       b24MarketCode: '',
+      // Public origin the app is served from, e.g. 'https://smart-links.example.com'. Used for the
+      // landing's canonical/og:url. Empty => those tags are omitted (an absolute URL is required
+      // and guessing one is worse than having none).
+      siteUrl: '',
       // Build commit sha ('dev' locally); overridden by NUXT_PUBLIC_COMMIT_SHA at build/runtime.
       commitSha: 'dev'
     }
@@ -39,6 +45,17 @@ export default defineNuxtConfig({
     }
   },
   compatibilityDate: '2025-07-16',
+
+  // Legacy '*.html' URLs (the pre-rename in-portal paths) redirect to the new routes. Without
+  // this a portal still pointed at '/index.html' would silently render the public LANDING inside
+  // its iframe, and the other old paths would 404 — both hard to diagnose.
+  routeRules: {
+    '/index.html': { redirect: { to: '/app', statusCode: 301 } },
+    '/install.html': { redirect: { to: '/install', statusCode: 301 } },
+    '/handler/uf.smart-link.html': { redirect: { to: '/handler/uf.smart-link', statusCode: 301 } },
+    '/slider/app-options.html': { redirect: { to: '/slider/app-options', statusCode: 301 } },
+    '/slider/feedback.html': { redirect: { to: '/slider/feedback', statusCode: 301 } }
+  },
 
   nitro: {
     prerender: {

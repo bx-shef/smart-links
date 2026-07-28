@@ -29,7 +29,7 @@ const { $logger, moduleId, initApp, reloadData, b24Helper, destroyB24Helper, use
 const link = useLinkStore()
 const appSettings = useAppSettingsStore()
 const user = useUserStore()
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 const isSetUfSettings = ref(true)
 const isEditMode = ref(false)
@@ -595,7 +595,10 @@ onMounted(async () => {
   try {
     page.isLoading = true
 
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+    }
     await initApp($b24, localesI18n, setLocale)
 
     link.setB24($b24)
@@ -646,7 +649,7 @@ onUnmounted(() => {
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"
         :b24ui="{ descriptionWrapper: 'w-full' }"
-        :avatar="{ src: '../avatar/assistant.png' }"
+        :avatar="{ src: '/avatar/assistant.png' }"
       >
         <ProseH4>{{ $t('uf.smart-link.error.edit-mode.title') }}</ProseH4>
         <ProseP small>{{ $t('uf.smart-link.error.edit-mode.line1') }}</ProseP>
@@ -658,7 +661,7 @@ onUnmounted(() => {
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"
         :b24ui="{ descriptionWrapper: 'w-full' }"
-        :avatar="{ src: '../avatar/assistant.png' }"
+        :avatar="{ src: '/avatar/assistant.png' }"
       >
         <ProseH5>{{ $t('uf.smart-link.error.no-settings.title') }}</ProseH5>
         <ProseP small>{{ $t('uf.smart-link.error.no-settings.line1') }}</ProseP>

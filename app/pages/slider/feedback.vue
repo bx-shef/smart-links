@@ -15,7 +15,7 @@ definePageMeta({
 
 // region Init ////
 const { $logger, initApp, b24Helper, destroyB24Helper, processErrorGlobal } = useAppInit('FeedbackSlider')
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 
 let iframe: null | HTMLIFrameElement = null
@@ -106,7 +106,10 @@ onMounted(async () => {
       throw new Error('You need to specify the parameters of your form')
     }
 
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+    }
     await initApp($b24, localesI18n, setLocale)
 
     initFrame()

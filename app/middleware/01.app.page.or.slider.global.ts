@@ -1,12 +1,10 @@
-import { LoggerBrowser } from '@bitrix24/b24jssdk'
-import type { B24Frame } from '@bitrix24/b24jssdk'
 import type { RouteLocationNormalized } from 'vue-router'
 import { isPublicRoute } from '~/utils/routes'
+import { useB24 } from '~/composables/useB24'
 
-const $logger = LoggerBrowser.build(
-  'middleware:app.page.or.slider.global',
-  import.meta.dev
-)
+// Global middleware: routes a Bitrix24 SLIDER frame to its page based on placement.options.place.
+// It must NOT import the B24 SDK statically — being global, it lands in the entry chunk, which
+// the public landing loads. The SDK is pulled in lazily by useB24().init() instead.
 
 const baseDir = '/'
 
@@ -16,45 +14,32 @@ function isSkipB24(toPath: string): boolean {
     || toPath.includes(`${baseDir}render`)
 }
 
-/**
- * This demonstrates how to use `useState('isUseB24Frame')` in an application.
- * ```ts
- *  const isUseB24Frame = useState('isUseB24Frame')
- *  if (import.meta.server || !isUseB24Frame.value) {
- *   // ...
- *  }
- * ```
- */
-
 export default defineNuxtRouteMiddleware(async (
   to: RouteLocationNormalized,
   from: RouteLocationNormalized
 ) => {
   const isUseB24Frame = useState('isUseB24Frame', () => true)
 
-  /**
-   * @memo skip middleware on server
-   */
+  // Never touch the frame during SSR/prerender.
   if (import.meta.server) {
     return
   }
 
-  $logger.log('>> start', {
-    to: to.path,
-    from: from.path
-  })
+  if (import.meta.dev) {
+    console.log('[middleware] start', { to: to.path, from: from.path })
+  }
 
   if (isSkipB24(to.path)) {
     isUseB24Frame.value = false
-    $logger.log('middleware >> Skip')
     return Promise.resolve()
   }
 
   try {
-    const { $initializeB24Frame } = useNuxtApp()
-    const $b24: B24Frame = await $initializeB24Frame()
+    const $b24 = await useB24().init()
+    if (!$b24) {
+      return // not inside a portal — leave the page to handle it
+    }
 
-    $logger.log('>> placement.options', $b24.placement.options)
     if ($b24.placement.options?.place) {
       const optionsPlace: string = $b24.placement.options.place
       let goTo: null | string = null
@@ -69,12 +54,9 @@ export default defineNuxtRouteMiddleware(async (
         null !== goTo
         && to.path !== goTo
       ) {
-        $logger.log(`middleware >> ${goTo}`)
         return navigateTo(goTo)
       }
     }
-
-    $logger.log('>> stop')
   } catch (error: any) {
     const appError = createError({
       statusCode: 404,
@@ -88,7 +70,7 @@ export default defineNuxtRouteMiddleware(async (
       fatal: true
     })
 
-    $logger.error(appError)
+    console.error(appError)
 
     showError(appError)
     return Promise.reject(appError)

@@ -15,7 +15,7 @@ useHead({
 
 // region Init ////
 const { initApp, b24Helper, processErrorGlobal } = useAppInit('IndexPage')
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 
 // Rating prompt (inert unless NUXT_PUBLIC_B24_MARKET_CODE is set).
@@ -52,7 +52,10 @@ onMounted(async () => {
   page.isLoading = true
 
   try {
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+    }
     await initApp($b24, localesI18n, setLocale)
 
     await $b24.parent.setTitle(t('page.index.seo.title'))
@@ -88,7 +91,7 @@ onUnmounted(() => {
     <B24Advice
       class="w-full max-w-[550px]"
       :b24ui="{ descriptionWrapper: 'w-full' }"
-      :avatar="{ src: 'avatar/assistant.png' }"
+      :avatar="{ src: '/avatar/assistant.png' }"
     >
       <ProseH3>{{ $t('page.index.message.title') }}</ProseH3>
       <ProseP>{{ $t('page.index.message.line1') }}</ProseP>

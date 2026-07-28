@@ -9,13 +9,10 @@ const { t, locale } = useI18n()
 const slots = defineSlots()
 
 const page = usePageStore()
-useSeoMeta({
-  title: page.title,
-  description: page.description
-})
+usePageSeo()
 
 const { processErrorGlobal } = useAppInit('LayoutDefault')
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 // endregion ////
 
 // region Actions ////
@@ -23,7 +20,7 @@ const { $initializeB24Frame } = useNuxtApp()
 // prerender/SSR, where there is no portal frame.
 const makeOpenFeedBack = async () => {
   try {
-    const $b24 = await $initializeB24Frame()
+    const $b24 = await initB24Frame()
     await $b24?.slider.openSliderAppPage(
       {
         place: 'feedback',

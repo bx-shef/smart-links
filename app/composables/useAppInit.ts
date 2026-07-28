@@ -14,9 +14,6 @@ export interface ProcessErrorData {
   homePageTitle?: string
 }
 
-const { initB24Helper, getB24Helper, destroyB24Helper: destroyB24HelperOry, usePullClient, useSubscribePullClient, startPullClient } = useB24Helper()
-const isInitB24Helper = ref(false)
-
 const moduleId = 'main'
 
 /**
@@ -24,6 +21,11 @@ const moduleId = 'main'
  * Coordinates data loading via batch request
  */
 export const useAppInit = (loggerTitle?: string) => {
+  // Resolved per call (not at module scope): with SSR enabled, module-level state would become a
+  // cross-request singleton on the server.
+  const { initB24Helper, getB24Helper, destroyB24Helper: destroyB24HelperOry, usePullClient, useSubscribePullClient, startPullClient } = useB24Helper()
+  const isInitB24Helper = ref(false)
+
   const $logger = LoggerBrowser.build(
     loggerTitle ?? 'App',
     import.meta.dev

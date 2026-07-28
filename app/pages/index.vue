@@ -14,10 +14,28 @@ const config = useRuntimeConfig()
 useHead({
   bodyAttrs: { class: 'light light:[--air-theme-bg-color:#ffffff]' }
 })
+// Absolute origin for canonical/og:url. Baked at build time from NUXT_PUBLIC_SITE_URL; when it is
+// unset every URL-bearing tag is omitted rather than pointing at a guessed host.
+const siteUrl = computed(() => String(config.public.siteUrl || '').replace(/\/+$/, ''))
+
 // Getters (not plain values) so title/description follow a locale change.
 useSeoMeta({
   title: () => t('landing.seo.title'),
-  description: () => t('landing.seo.description')
+  description: () => t('landing.seo.description'),
+  ogType: 'website',
+  ogSiteName: () => t('app.name'),
+  ogLocale: 'ru_RU',
+  ogTitle: () => t('landing.seo.title'),
+  ogDescription: () => t('landing.seo.description'),
+  // Same form as the canonical below — two spellings of one URL split link signals.
+  ogUrl: () => (siteUrl.value ? `${siteUrl.value}/` : undefined),
+  twitterCard: 'summary',
+  twitterTitle: () => t('landing.seo.title'),
+  twitterDescription: () => t('landing.seo.description')
+})
+
+useHead({
+  link: () => (siteUrl.value ? [{ rel: 'canonical', href: `${siteUrl.value}/` }] : [])
 })
 
 const commit = computed(() => String(config.public.commitSha || 'dev'))

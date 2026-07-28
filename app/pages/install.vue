@@ -31,7 +31,7 @@ function getBaseUrl(): string {
 // The page is prerendered, so nothing here may touch `window` or the portal frame at setup —
 // both are resolved client-side in onMounted below.
 const { $logger, initLang, processErrorGlobal } = useAppInit('Install')
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 
 const confetti = useConfetti()
@@ -128,7 +128,10 @@ onMounted(async () => {
   $logger.info('Hi from install page')
 
   try {
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+    }
     await initLang($b24, localesI18n, setLocale)
     await $b24.parent.setTitle(t('page.install.seo.title'))
 

@@ -24,8 +24,14 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
     Все пререндерятся; фрейм инициализируется в `onMounted`, `<B24App>` — в layout'ах.
   - `stores/` — Pinia: `appSettings` (версия/статус/`configUfListSettings` + пути + `saveSettings`),
     `link` (текущая целевая ссылка), `page` (title/description/isLoading), `user` (`isAdmin`).
+  - `composables/useB24.ts` — **единственная точка входа во фрейм**: ленивый `import()` SDK +
+    идемпотентный `init()`. Статических импортов `@bitrix24/b24jssdk` в entry-графе быть не должно —
+    иначе 300 КБ SDK уезжают в чанк, который грузит публичный лендинг (плагин
+    `@bitrix24/b24jssdk-nuxt` по той же причине не подключён).
   - `composables/useAppInit.ts` — старт приложения: язык, `initB24Helper` (App/AppOptions/Profile),
     наполнение сторов, `processErrorGlobal`, pull-клиент.
+  - `composables/usePageSeo.ts` — `<title>`/`description` in-portal страниц из стора `page`
+    (геттеры, фолбэк на `app.name`, пустой `description` не эмитится).
   - `middleware/` — роутинг по `placement.options.place` (слайдеры).
   - `layouts/` / `components/` / `utils/` (чистые функции) / `assets/`.
 - `shared/types/base.d.ts` — общие типы (`UfSmartLinkType`, `IStep`).

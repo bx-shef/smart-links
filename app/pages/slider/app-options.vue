@@ -20,7 +20,7 @@ const toast = useToast()
 const { $logger, moduleId, initApp, destroyB24Helper, usePullClient, startPullClient, processErrorGlobal } = useAppInit('SliderAppOptionsPage')
 const appSettings = useAppSettingsStore()
 const user = useUserStore()
-const { $initializeB24Frame } = useNuxtApp()
+const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 
 const ufCode = ref('')
@@ -215,7 +215,10 @@ onMounted(async () => {
   try {
     page.isLoading = true
 
-    $b24 = await $initializeB24Frame()
+    $b24 = await initB24Frame()
+    if (!$b24) {
+      throw new Error('Bitrix24 frame is not available (open the app inside a portal)')
+    }
     await initApp($b24, localesI18n, setLocale)
 
     if (!user.isAdmin) {

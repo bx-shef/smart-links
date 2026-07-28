@@ -15,10 +15,7 @@ const { locale } = useI18n()
 const slots = defineSlots()
 
 const page = usePageStore()
-useSeoMeta({
-  title: page.title,
-  description: page.description
-})
+usePageSeo()
 // endregion ////
 </script>
 
