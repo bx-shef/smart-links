@@ -82,3 +82,8 @@ export function createRateLimiter(max: number, windowMs: number, maxKeys = 10_00
 // ('prompted', then 'opened'), so this is generous for a human and tight for a script.
 export const RATING_MAX_REQUESTS = 30
 export const RATING_WINDOW_MS = 10 * 60 * 1000
+
+// Budget for the public install/uninstall webhook. A portal installs the app once and uninstalls it
+// once, so even a handful per window is generous for real traffic.
+export const WEBHOOK_MAX_REQUESTS = 10
+export const WEBHOOK_WINDOW_MS = 10 * 60 * 1000

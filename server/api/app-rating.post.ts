@@ -1,5 +1,6 @@
 import { extractFrameAuth } from '../utils/frameAuth'
-import { verifyFrameToken } from '../utils/frameVerify'
+import { portalKeyForHost, verifyFrameToken } from '../utils/frameVerify'
+import { memberIdForDomain } from '../utils/tokenStore'
 import { markOpened, markPrompted } from '../utils/appRatingStore'
 import { parseRatingAction } from '../utils/appRatingRequest'
 import { allowFrameRequest } from '../utils/frameRateGuard'
@@ -9,7 +10,8 @@ import { query, dbEnabled } from '../db/client'
 //   { action: 'prompted' } — the modal was shown (throttle for RATING_REPROMPT_DAYS).
 //   { action: 'opened' }   — the user clicked «Оценить» → we opened the Market page (suppresses
 //                            the modal until an owner manually verifies whether a review appeared).
-// Frame-token authenticated (the per-portal key is the verified host). Non-fatal for the UX: the
+// Frame-token authenticated (the per-portal key comes from the verified host, resolving to the
+// installed portal's member_id where one is known). Non-fatal for the UX: the
 // client ignores errors, but we still return an accurate status.
 export default defineEventHandler(async (event) => {
   if (!dbEnabled()) {
@@ -41,10 +43,17 @@ export default defineEventHandler(async (event) => {
     return { error: 'unknown action' }
   }
 
+  const portalKey = await portalKeyForHost(verified.host, d => memberIdForDomain(d, query))
+  if (!portalKey) {
+    // The key lookup failed. Doing the work under a fallback key would split this portal's state
+    // across two rows, so skip it — this route is best-effort by design.
+    setResponseStatus(event, 503)
+    return { error: 'portal key unavailable' }
+  }
   if (action === 'prompted') {
-    await markPrompted(verified.host, query)
+    await markPrompted(portalKey, query)
   } else {
-    await markOpened(verified.host, query)
+    await markOpened(portalKey, query)
   }
   return { ok: true }
 })

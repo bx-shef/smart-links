@@ -91,8 +91,9 @@ Bitrix24-приложение, которое добавляет пользов�
    368 КБ CSS b24ui (≈40 КБ gzip), из них ~134 КБ — токены air-дизайна. План: свой вход Tailwind
    (`source(none)` + `@source` на `pages/index.vue`) для лендинга, b24ui-CSS — только на
    in-portal-маршрутах и `error.vue`. — *следующее.*
-5. **S4 — Market OAuth**: install/uninstall-события, хранилище токенов; ключ рейтинга
-   `portal_key` переедет с `host` на `member_id`.
+4.1 ✅ **S4 — Market OAuth**: вебхук `/api/b24/events`, `portal_tokens` с шифрованным
+   `refresh_token`, привязка `member_id` к гранту, тумбстоун порядка событий, keep-alive рефреш;
+   ключ рейтинга — `member_id` с фолбэком на хост. ⚠ **Живой прогон не делался.**
 6. Дальше: пикеры полей в настройках, `nuxt`-проект Vitest, `@todo` (`myCompany`/`dogovor`,
    смарт-процессы), при необходимости — мультиязычность.
 

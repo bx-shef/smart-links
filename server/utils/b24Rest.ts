@@ -29,11 +29,15 @@ export function normaliseHost(domain: string): string {
  * exists so a zone we missed is a config change, not an outage waiting on a deploy.
  */
 export const B24_ZONES = [
-  'bitrix24.ru', 'bitrix24.by', 'bitrix24.kz', 'bitrix24.ua', 'bitrix24.uz',
+  // Verified live: a wildcard portal subdomain resolves and answers /rest like bitrix24.ru does.
+  'bitrix24.ru', 'bitrix24.by', 'bitrix24.kz', 'bitrix24.uz',
   'bitrix24.com', 'bitrix24.eu', 'bitrix24.de', 'bitrix24.es', 'bitrix24.fr',
-  'bitrix24.it', 'bitrix24.pl', 'bitrix24.in', 'bitrix24.vn', 'bitrix24.jp',
-  'bitrix24.cn', 'bitrix24.mx', 'bitrix24.id', 'bitrix24.tech',
-  'bitrix24.com.br', 'bitrix24.com.tr', 'bitrix24.co.uk'
+  'bitrix24.it', 'bitrix24.pl', 'bitrix24.uk', 'bitrix24.co', 'bitrix24.ae',
+  'bitrix24.in', 'bitrix24.vn', 'bitrix24.jp', 'bitrix24.cn', 'bitrix24.mx',
+  'bitrix24.id', 'bitrix24.com.br', 'bitrix24.com.tr'
+  // Deliberately absent: bitrix24.ua has no DNS at all (an allowlisted domain nobody controls is
+  // the very hole this guard exists to close); bitrix24.co.uk is not a portal zone (.uk is);
+  // bitrix24.tech hosts the OAuth server, not portals.
 ] as const
 
 function allowedZones(env: Record<string, string | undefined> = process.env): string[] {

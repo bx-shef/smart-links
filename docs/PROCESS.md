@@ -33,7 +33,10 @@ in-portal-код исполняется **внутри iframe портала** (
 (`EnumCrmEntityTypeId.deal`); редактор настроек соответственно предлагает один CRM-тип. Другие
 CRM-сущности требуют расширения резолверов.
 
-**Скоупы приложения:** `user_brief`, `crm`, `list`, `placement`, `userfieldconfig`, `pull`.
+**Скоупы приложения:** `user_brief`, `crm`, `lists`, `placement`, `userfieldconfig`, `pull`.
+⚠ Именно `lists`, а не `list` — кода `list` в перечне скоупов Битрикса нет, и с ним
+`lists.element.*` вернул бы `insufficient_scope`, то есть половина функции «умной ссылки»
+(цель — элемент Списка) просто не работала бы.
 
 ## Раскладка (что где)
 
