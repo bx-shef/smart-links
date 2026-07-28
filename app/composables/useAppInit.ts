@@ -164,21 +164,22 @@ export const useAppInit = (loggerTitle?: string) => {
       return
     }
 
-    let title = 'Error'
-    let description = ''
+    // The raw Bitrix error goes to the console for us; the screen gets a sentence a portal user can
+    // act on. Showing `[AjaxError] ERROR_CODE (400)` as the heading told them nothing they could do
+    // anything about — and it is the first thing a Market reviewer would screenshot.
+    let description = t('error.description')
 
     if (error instanceof AjaxError) {
-      title = `[${error.name}] ${error.code} (${error.status})`
-      description = `${error.message}`
-    } else if (error instanceof Error) {
+      // The portal's own message is usually in Russian and specific ("access denied", "not found"),
+      // so it is worth showing — the machine code next to it is not.
+      description = error.message || description
+    } else if (error instanceof Error && error.message) {
       description = error.message
-    } else {
-      description = error as string
     }
 
     showError({
       statusCode: 404,
-      statusMessage: title,
+      statusMessage: t('error.title'),
       data: Object.assign({
         description: description,
         homePageIsHide: true,
