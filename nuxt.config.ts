@@ -15,9 +15,10 @@ export default defineNuxtConfig({
   ],
   ssr: false,
   devtools: { enabled: false },
-  app: {
-    baseURL: '/smart-link/'
-  },
+  // No global baseURL: the public landing is served at '/', in-portal pages keep their own
+  // '*.html' paths, and /api/* answers without a redirect (the served/Black Hole deploy target).
+  // The archive flow is unaffected — install.html derives the handler URL from window.location
+  // and tools/fix-paths rewrites asset paths relative at packaging time.
 
   css: ['~/assets/css/main.css'],
   runtimeConfig: {

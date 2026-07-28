@@ -55,6 +55,22 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
 
 ## Прогресс
 
+- **Лендинг + снятие `baseURL` — сделано:** глобальный `app.baseURL: '/smart-link/'` убран →
+  публичный лендинг на `/`, in-portal-страницы сохраняют свои `*.html`-пути, `/api/*` отвечает
+  **без редиректа** (закрыт follow-up S1: liveness-проба бьёт в `/api/health` → 200).
+  Безопасно: `install.html` выводит HANDLER-URL из `window.location` (самоадаптируется),
+  `tools/fix-paths` переписывает пути относительными при упаковке, `useAppRating` читает baseURL
+  динамически. Лендинг — `app/pages/index.vue` (standalone, `layout:false`), тексты в i18n,
+  футер использует `shortSha`/`commitUrl`. Глобальный middleware больше не инициализирует
+  B24-фрейм на публичном маршруте (`isPublicRoute`), иначе лендинг вне портала падал бы в ошибку.
+  Смоук served-процесса: `/`=200, `/api/health`=200, `/index.html`=200,
+  `/handler/uf.smart-link.html`=200, `/api/app-rating`=200 `{show:false}`.
+  - ⚠ **SEO-ограничение (следующий инкремент):** приложение собрано с `ssr: false`, а `app.vue`
+    оборачивает всё в `<ClientOnly>` → HTML лендинга отдаётся пустой оболочкой (контент
+    подставляет клиент). Для маркетинга нужен SSR/пререндер: включить `ssr: true`, снять blanket
+    `ClientOnly` (in-portal-страницы уже client-only через `*.client.vue`), проверить layout'ы,
+    инициализирующие фрейм (`layouts/default.vue` делает top-level `await $initializeB24Frame()`).
+    Вынесено в отдельный инкремент — рефакторинг затрагивает рабочие in-portal-страницы.
 - **S2 — ЗАВЕРШЕНА (S2a–S2d):** полный серверный контур рейтинга. **S2c** — роуты
   `server/api/app-rating.get/post` (фрейм-токен → host, `{show}` / `prompted`|`opened`; без БД —
   инертно). **S2d** — клиент `useAppRating` берёт решение показа с **сервера** (`GET /api/app-rating`

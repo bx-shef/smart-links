@@ -9,8 +9,16 @@ const $logger = LoggerBrowser.build(
 
 const baseDir = '/'
 
+/** Routes rendered OUTSIDE a Bitrix24 portal — they must not initialise the frame SDK.
+ *  The public landing lives at '/' (in-portal pages keep their own '*.html' paths). */
+function isPublicRoute(toPath: string): boolean {
+  const path = toPath.replace(/\/+$/, '')
+  return path === ''
+}
+
 function isSkipB24(toPath: string): boolean {
-  return !toPath.includes(`${baseDir}`)
+  return isPublicRoute(toPath)
+    || !toPath.includes(`${baseDir}`)
     || toPath.includes(`${baseDir}eula`)
     || toPath.includes(`${baseDir}render`)
 }
