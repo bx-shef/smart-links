@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { shortSha, commitUrl } from '~/utils/build'
+import { marketListingUrl } from '~/utils/appRating'
 
 // Public marketing landing served at '/'. Standalone: no Bitrix24 frame, no portal auth —
 // it must render outside a portal. In-portal pages live under /app, /install, /handler, /slider.
@@ -41,12 +42,13 @@ useHead({
   link: () => (siteUrl.value ? [{ rel: 'canonical', href: `${siteUrl.value}/` }] : [])
 })
 
-// Market listing, support and legal details — each rendered only when configured. The Market
-// listing URL is built from the same code the rating prompt uses, so there is one place to set it.
-const marketUrl = computed(() => {
-  const code = String(config.public.b24MarketCode || '').trim()
-  return code ? `https://www.bitrix24.ru/apps/?app=${encodeURIComponent(code)}` : ''
-})
+// Market listing, support and legal details — each rendered only when configured. The listing URL
+// is built by a tested util rather than inline here: the zone matters (each Bitrix24 zone has its
+// own catalogue) and a wrong one sends the visitor to a storefront without the app.
+const marketUrl = computed(() => marketListingUrl(
+  config.public.b24MarketCode,
+  config.public.b24MarketZone
+) ?? '')
 const supportEmail = computed(() => String(config.public.supportEmail || '').trim())
 const publisherDetails = computed(() => String(config.public.publisherDetails || '').trim())
 

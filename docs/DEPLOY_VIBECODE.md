@@ -1,6 +1,6 @@
 # Деплой в Битрикс24 Вайбкод Black Hole
 
-> Last reviewed: 2026-07-28
+> Last reviewed: 2026-07-29
 
 Как выложить «Умные ссылки» в **Битрикс24 Vibecode Black Hole** — закрытую Bitrix-Cloud VM,
 управляемую по REST (без SSH). Приложение слушает `:3000`, платформа отдаёт его по HTTPS на
@@ -69,7 +69,10 @@
 | Переменная | Что выключится, если задать только в рантайме |
 |---|---|
 | `NUXT_PUBLIC_SITE_URL` | `canonical` и `og:url` лендинга |
-| `NUXT_PUBLIC_B24_MARKET_CODE` | попап «оцените приложение» |
+| `NUXT_PUBLIC_B24_MARKET_CODE` | попап «оцените приложение» и ссылка на Маркет в футере |
+| `NUXT_PUBLIC_B24_MARKET_ZONE` | зона каталога Маркета в ссылке (`ru`/`by`/`kz`/`com`, по умолчанию `ru`) |
+| `NUXT_PUBLIC_SUPPORT_EMAIL` | контакт поддержки в футере и в политике конфиденциальности |
+| `NUXT_PUBLIC_PUBLISHER_DETAILS` | реквизиты издателя там же |
 | `NUXT_PUBLIC_B24_FORM_ID` / `_SECRET` / `_LOADER_SCRIPT` | форма обратной связи в слайдере |
 | `NUXT_PUBLIC_COMMIT_SHA` | ссылка на сборку в футере лендинга |
 

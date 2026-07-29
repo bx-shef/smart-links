@@ -33,6 +33,9 @@ export default defineNuxtConfig({
       b24FormLoaderScript: '',
       // Bitrix24 Market listing code; empty => rating prompt disabled (fail-safe).
       b24MarketCode: '',
+      // Bitrix24 zone whose public Market catalogue the landing links to ('ru' | 'by' | 'kz' |
+      // 'com'). Each zone carries a different set of listings, so this is not cosmetic.
+      b24MarketZone: 'ru',
       // Publisher contact and legal details shown in the landing footer and the privacy page.
       // Empty => the block is omitted entirely rather than rendered with a placeholder: the Market
       // listing and the privacy policy are legal surfaces, and a stand-in there is worse than a

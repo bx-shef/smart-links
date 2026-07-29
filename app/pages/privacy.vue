@@ -37,12 +37,13 @@ const sections = computed(() => [
   <div class="flex min-h-dvh flex-col bg-white text-slate-900">
     <main class="mx-auto w-full max-w-3xl flex-1 px-6 py-16">
       <NuxtLink to="/" class="text-sm text-slate-500 hover:text-slate-900">
-        {{ $t('privacy.back') }}
+        <span aria-hidden="true">←</span> {{ $t('privacy.back') }}
       </NuxtLink>
 
       <h1 class="mt-6 text-3xl font-semibold tracking-tight sm:text-4xl">
         {{ $t('privacy.title') }}
       </h1>
+      <p class="mt-2 text-sm text-slate-500">{{ $t('privacy.updated') }}</p>
       <p class="mt-4 leading-relaxed text-slate-600">
         {{ $t('privacy.intro') }}
       </p>
@@ -56,7 +57,12 @@ const sections = computed(() => [
         <p class="mt-3 leading-relaxed whitespace-pre-line text-slate-600">{{ section.body }}</p>
       </section>
 
-      <section class="mt-10">
+      <!--
+        Gated as a whole, heading included. With the details unset the section rendered a bare
+        «Контакты» with nothing under it — which reads as a broken page, not as a deliberate gap,
+        and sits right after the paragraph telling the reader to write to the publisher.
+      -->
+      <section v-if="supportEmail || publisherDetails" class="mt-10">
         <h2 class="text-xl font-medium">{{ $t('privacy.contact.title') }}</h2>
         <p v-if="supportEmail" class="mt-3 leading-relaxed text-slate-600">
           {{ $t('privacy.contact.body') }}
