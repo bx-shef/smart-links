@@ -79,7 +79,40 @@ const filterFromOrigin = ref<Record<string, undefined | number>>({
 // endregion ////
 
 // region Init Data ////
-async function loadData(
+/**
+ * Refresh the placement from the portal, reporting its own failures.
+ *
+ * The guard is the point. This runs at the end of every write, and it issues REST calls of its
+ * own — so without a catch here a failed refresh surfaced as the WRITE's error message: the field
+ * had in fact been changed, while the alert said the card was untouched and told the user to press
+ * a control that the already-updated view no longer rendered.
+ */
+async function loadData(isFixLoadPage: boolean = true): Promise<void> {
+  try {
+    await loadDataFromPortal(isFixLoadPage)
+  } catch (error) {
+    reportActionError(error, 'uf.smart-link.error.load')
+  }
+}
+
+/**
+ * Refresh after a successful write, keeping the spinner up for the whole round trip.
+ *
+ * The spinner has to be managed here rather than left to the write's own `finally`: the refresh
+ * now runs outside it, and `loadData` only raises the spinner on the branches that reach
+ * `preLoadData`, so the branch where the link resolves would otherwise refresh with no indication
+ * that anything is happening.
+ */
+async function refreshAfterWrite(): Promise<void> {
+  page.isLoading = true
+  try {
+    await loadData()
+  } finally {
+    page.isLoading = false
+  }
+}
+
+async function loadDataFromPortal(
   isFixLoadPage: boolean = true
 ) {
   if (!$b24) {
@@ -227,9 +260,8 @@ async function loadData(
     }
   }
 
-  if (isFixLoadPage) {
-    await resizeWindow()
-  }
+  // Resizing is the watcher's job. Doing it here measured the loading spinner, because every
+  // caller that passes `isFixLoadPage` is holding `page.isLoading` true across this call.
 }
 
 /**
@@ -242,6 +274,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
   if (!$b24) {
     return
   }
+  actionError.value = ''
   if (isFixLoadPage) {
     page.isLoading = true
   }
@@ -374,9 +407,6 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
 
       listEntity.value = listResult
     }
-
-    actionError.value = ''
-
   } catch (error) {
     reportActionError(error, 'uf.smart-link.error.load')
   } finally {
@@ -390,26 +420,45 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
 
 // region Actions ////
 /**
- * Open a portal path.
+ * Open a portal path: the slider for CRM targets, a new tab for Lists targets.
  *
- * Always prefer the portal's own slider. This page lives in an iframe inside a CRM card, where
- * `window.open` is blocked by popup blockers, opens a bare tab in the Bitrix24 mobile client, and
- * breaks the "create the record, come back to the card" flow the placement is built around.
- * Lists paths used to bypass the slider on the assumption it could not handle them — so try it
- * first and fall back only if it actually refuses.
+ * The split looks arbitrary and is not. Routing Lists through the slider was tried and reverted
+ * after reading the SDK: `slider.openPath` prefixes the path with `/crm/company/requisite/0/../../../..`
+ * before sending it, so a Lists URL passes the portal's prefix check by traversal rather than by
+ * being supported — the refusal a "try the slider, fall back on error" scheme depends on would
+ * likely never arrive. Two further reasons a fallback cannot carry that weight: `openPath` settles
+ * from the parent frame's reply, so a `window.open` in its catch runs with no user activation and
+ * the browser blocks it; and `openPath` arms no timeout, so an unanswered command hangs the caller
+ * forever where the old `window.closed` poll could not.
  *
- * Resolves when the slider closes, which is what lets the caller refresh afterwards without
- * polling `window.closed` (a poll that popup blockers and cross-origin rules break anyway).
+ * Whether the portal slider actually renders a Lists element page needs a live check on a portal
+ * with a Lists target. Until then this keeps the behaviour that is known to work.
  */
+function isListsTarget(): boolean {
+  return link.entityMode === 'lists'
+}
+
+/**
+ * Poll handle for the "create a Lists element" tab.
+ *
+ * Held at this level so it can be cleared on unmount: a CRM card can be closed while the tab is
+ * still open, and an interval left running keeps a closure over the whole page alive and fires a
+ * refresh into a placement that no longer exists.
+ */
+let newEntityTimer: ReturnType<typeof setInterval> | null = null
+
+function clearNewEntityWatch() {
+  if (newEntityTimer !== null) {
+    clearInterval(newEntityTimer)
+    newEntityTimer = null
+  }
+}
+
 async function openInPortal(path: URL): Promise<void> {
   if (!$b24) {
     return
   }
-  try {
-    await $b24.slider.openPath(path, 950)
-  } catch {
-    window.open(path.toString(), '_blank')
-  }
+  await $b24.slider.openPath(path, 950)
 }
 
 async function makeOpenLink() {
@@ -418,7 +467,15 @@ async function makeOpenLink() {
   }
 
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', link.id.toString())
-  await openInPortal($b24.slider.getUrl(url))
+  const path = $b24.slider.getUrl(url)
+
+  if (isListsTarget()) {
+    // Synchronous, inside the click handler: this is the only place the browser still counts the
+    // user gesture, and a `window.open` deferred behind an await is blocked as a popup.
+    window.open(path, '_blank')
+    return
+  }
+  await openInPortal(path)
 }
 
 /**
@@ -456,12 +513,29 @@ async function addNewEntity() {
       shSmartLink_ENTITY_TYPE_ID: `${currentEntityTypeId.value}`,
     }).toString()
 
-    await openInPortal(new URL(`${path.toString()}?${query}`))
-    await loadData()
+    // Opened synchronously (see openInPortal): a Lists page is not something the slider is known
+    // to render, and deferring the open past an await loses the user gesture.
+    const created = window.open(`${path.toString()}?${query}`, '_blank')
+    // Poll for the tab closing so the list picks up whatever was just created. `created` is null
+    // when the browser blocked the popup — refresh once instead of polling a window that does not
+    // exist, otherwise the interval never clears.
+    if (!created) {
+      await refreshAfterWrite()
+      return
+    }
+    clearNewEntityWatch()
+    newEntityTimer = setInterval(async () => {
+      if (created.closed) {
+        clearNewEntityWatch()
+        await refreshAfterWrite()
+      }
+    }, 500)
     return
   }
 
   await openInPortal(path)
+  // openPath resolves when the slider closes, so the new record is already there to be found.
+  await refreshAfterWrite()
 }
 
 async function makeOpenLinkById(entity: EntityItem) {
@@ -470,7 +544,13 @@ async function makeOpenLinkById(entity: EntityItem) {
   }
 
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', entity.id.toString())
-  await openInPortal($b24.slider.getUrl(url))
+  const path = $b24.slider.getUrl(url)
+
+  if (isListsTarget()) {
+    window.open(path, '_blank')
+    return
+  }
+  await openInPortal(path)
 }
 
 async function makeAddLink(entity: EntityItem) {
@@ -491,6 +571,12 @@ async function makeAddLink(entity: EntityItem) {
     return
   }
 
+  actionError.value = ''
+  let written = false
+
+  // Only the write belongs in here. The refresh that follows it must not be able to report itself
+  // as a failed link — by the time it runs the card HAS been updated, and the message for a failed
+  // link says the opposite.
   try {
     page.isLoading = true
 
@@ -512,11 +598,15 @@ async function makeAddLink(entity: EntityItem) {
       id: entity.id,
       title: entity.title,
     })
-    await loadData()
+    written = true
   } catch (error) {
     reportActionError(error, 'uf.smart-link.error.link')
   } finally {
     page.isLoading = false
+  }
+
+  if (written) {
+    await refreshAfterWrite()
   }
 }
 
@@ -538,6 +628,11 @@ async function makeUnLink() {
     return
   }
 
+  actionError.value = ''
+  let written = false
+
+  // Same split as makeAddLink: the refresh runs after the link is already gone, so it cannot be
+  // allowed to claim the unlink failed.
   try {
     page.isLoading = true
 
@@ -554,11 +649,15 @@ async function makeUnLink() {
     )
 
     link.makeEmpty(configUfSetting.value.target.entityTypeId, configUfSetting.value.target.entityMode)
-    await loadData()
+    written = true
   } catch (error) {
     reportActionError(error, 'uf.smart-link.error.unlink')
   } finally {
     page.isLoading = false
+  }
+
+  if (written) {
+    await refreshAfterWrite()
   }
 }
 
@@ -574,27 +673,57 @@ function openSliderAppSettings() {
 const makeSendPullCommandHandler = async (message: TypePullMessage) => {
   if (message.command === 'reload.options') {
     $logger.warn("Get pull command for update. Reinit the application")
+    actionError.value = ''
+    // The try/finally is not optional here. The SDK invokes pull callbacks fire-and-forget, so a
+    // rejection anywhere in this chain is an unhandled promise rejection: the line clearing the
+    // spinner never runs, and the layout hides the whole placement behind it until the CRM card is
+    // reloaded. An admin saving settings would spin every open card in the portal.
     page.isLoading = true
-    await reloadData()
-    await loadData()
-    page.isLoading = false
+    try {
+      await reloadData()
+      await loadData()
+    } catch (error) {
+      reportActionError(error, 'uf.smart-link.error.load')
+    } finally {
+      page.isLoading = false
+    }
   }
 }
 // endregion ////
 
 // region Tools ////
-// The placement keeps whatever height the portal gave it, so an alert appearing below the content
-// would be clipped out of sight — ask for a new measurement whenever it shows up or goes away.
-watch(actionError, async () => {
-  await nextTick()
-  await resizeWindow()
-})
+// Re-measure whenever what is on screen changes size — the alert appearing, the view flipping
+// between the candidate list and the linked row, the list filling in.
+//
+// The `page.isLoading` guard is the important part: the layout replaces the entire page body with
+// a fixed-height spinner while loading, so a measurement taken then sizes the placement to the
+// SPINNER. Every resize in this file used to run inside a loading window, which meant a card with
+// a linked record (a 65 px row) permanently asked the portal for the spinner's ~270 px.
+watch(
+  () => [page.isLoading, actionError.value, link.isEmpty, listEntity.value.length] as const,
+  async ([isLoading]) => {
+    if (isLoading) {
+      return
+    }
+    await resizeWindow()
+  },
+  { flush: 'post' }
+)
 
 async function resizeWindow() {
-  // Size to the actual content rather than to hardcoded numbers. The fixed 340 px width came from
-  // the donor template and stayed the same on a phone as on a wide monitor; the height was a
-  // three-way guess that went wrong as soon as a record title wrapped.
-  await $b24?.parent.resizeWindowAuto(undefined, MIN_PLACEMENT_HEIGHT)
+  // Size to the actual content rather than to hardcoded numbers. The height used to be a
+  // three-way guess (260 / 270 / 85) that went wrong as soon as a record title wrapped.
+  //
+  // Swallow the failure deliberately. resizeWindowAuto measures the body and the SDK REJECTS a
+  // resize whose measured width or height is zero — which is exactly what a placement laid out in
+  // a hidden card tab measures. That rejection used to reach onMounted's catch and replace the
+  // whole placement with the full-screen error page: a cosmetic call taking down the feature. A
+  // placement at the portal's default size is a far better outcome than no placement.
+  try {
+    await $b24?.parent.resizeWindowAuto(undefined, MIN_PLACEMENT_HEIGHT)
+  } catch (error) {
+    $logger.warn('resizeWindowAuto refused the measured size', error)
+  }
 }
 // endregion ////
 
@@ -616,13 +745,11 @@ onMounted(async () => {
     currentEntityTypeId.value = Number.parseInt($b24.placement.options['ENTITY_DATA']['entityTypeId'])
     currentEntityId.value = Number.parseInt($b24.placement.options['ENTITY_DATA']['entityId'])
 
-    if (isEditMode.value) {
-      useHead({
-        bodyAttrs: {
-          class: `light light:[--air-theme-bg-color:#ffffff]`
-        }
-      })
-    }
+    // The white backdrop for edit mode is a class on the wrapper below, not a `useHead` call here.
+    // unhead MERGES `bodyAttrs.class` as a set union rather than replacing it, so pushing a second
+    // `light:[--air-theme-bg-color:…]` from the page left the body carrying both that value and the
+    // layout's, at identical specificity (`:where()` contributes none) — which of the two won came
+    // down to their byte order in the compiled stylesheet.
     usePullClient()
     useSubscribePullClient(
       makeSendPullCommandHandler.bind( this ),
@@ -630,7 +757,9 @@ onMounted(async () => {
     )
     startPullClient()
     await loadData(false)
-    await resizeWindow()
+    // No resize here: `page.isLoading` is still true until the finally below, so a measurement
+    // taken now would size the placement to the loading spinner. The watcher above fires on the
+    // transition to false, once the real content is on screen.
   } catch (error) {
     processErrorGlobal(error, {
       homePageIsHide: true,
@@ -643,6 +772,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearNewEntityWatch()
   if (b24Helper.value) {
     destroyB24Helper()
   }
@@ -652,7 +782,14 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <div v-if="isEditMode" class="flex flex-col items-center justify-center h-screen">
+    <!--
+      `py-4` rather than `h-screen` on these two advice states. `h-screen` is 100vh, which inside
+      the placement iframe IS the height we are asking the portal for — so auto-measuring the body
+      returned the height it already had, a fixed point the content could never grow out of. With
+      the wrapper sized by its content the measurement means something, and an advice too tall for
+      the current frame can actually ask for more room instead of being clipped.
+    -->
+    <div v-if="isEditMode" class="flex flex-col items-center justify-center py-4 bg-(--ui-color-base-white-fixed)">
       <B24Advice
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"
@@ -664,7 +801,7 @@ onUnmounted(() => {
         <ProseP small>{{ $t('uf.smart-link.error.edit-mode.line2') }}</ProseP>
       </B24Advice>
     </div>
-    <div v-else-if="!isSetUfSettings" class="flex flex-col items-center justify-center h-screen">
+    <div v-else-if="!isSetUfSettings" class="flex flex-col items-center justify-center py-4">
       <B24Advice
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"

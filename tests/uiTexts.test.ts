@@ -85,12 +85,38 @@ describe('русские тексты интерфейса', () => {
     // `layout.default.navbarHeader.feedback` while the landing navbar still asked for it, so the
     // button rendered its own key as the label. vue-i18n only warns about that at runtime, and the
     // warning scrolls past in a build log — here it fails the suite.
+    //
+    // Matching on `t(` was tried and is too narrow: keys also reach vue-i18n indirectly, through a
+    // helper that takes the key as an argument (`reportActionError(error, 'uf.smart-link.error.load')`),
+    // and those were invisible — the three keys added alongside the helper could have been deleted
+    // with the suite still green. Anchor on the locale file's own top-level namespaces instead, so
+    // a key is found wherever it is written. Case-sensitive on purpose: with `i`, PascalCase
+    // arguments like `useAppInit('Layout.IndexPage')` would be mistaken for keys.
+    // Anchored on the first TWO segments of a real key, not just the top-level namespace: Bitrix24
+    // REST method names collide with the single-segment ones (`app.option.set`, `app.options` vs our
+    // only `app.*` key, `app.name`), and matching those would demand junk keys in ru.json to go green.
     const blob = sourceBlob()
+    const prefixes = new Set(Object.keys(texts).map(k => k.split('.').slice(0, 2).join('.')))
+    expect(prefixes.size).toBeGreaterThan(0)
+    const keyLike = /['"`]([a-z][\w-]*(?:\.[\w-]+)+)['"`]/g
     const asked = new Set<string>()
-    for (const m of blob.matchAll(/\$?t\(\s*['"]([a-z][\w.-]*\.[\w.-]+)['"]/gi)) asked.add(m[1]!)
+    for (const m of blob.matchAll(keyLike)) {
+      const key = m[1]!
+      if (prefixes.has(key.split('.').slice(0, 2).join('.'))) asked.add(key)
+    }
     expect(asked.size).toBeGreaterThan(10)
     const missing = [...asked].filter(k => !(k in texts))
     expect(missing).toEqual([])
+  })
+
+  it('не собирают ключ локали из кусков', () => {
+    // A key built by interpolation defeats both directions at once: the orphan check stops seeing
+    // the key as used and demands its deletion, while the check above cannot resolve what was asked
+    // for. Keep every key a whole literal.
+    const blob = sourceBlob()
+    const namespaces = Object.keys(ru as Record<string, unknown>)
+    const interpolated = new RegExp('`(?:' + namespaces.join('|') + ')\\.[^`]*\\$\\{', 'g')
+    expect(blob.match(interpolated)).toBeNull()
   })
 
   it('не содержат ключей, на которые никто не ссылается', () => {

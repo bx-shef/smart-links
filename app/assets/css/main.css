@@ -1,9 +1,11 @@
 @import "tailwindcss";
 
 /*
- * The Bitrix24 design system is loaded GLOBALLY, including on the public landing, which uses none
- * of it (that page renders with `layout: false`, no <B24App>, no B24* component). That costs the
- * landing ~240 KB of CSS — about 40 KB gzip, most of it design tokens.
+ * The Bitrix24 design system is loaded GLOBALLY, including on the public landing, which renders
+ * with `layout: false` and uses no B24* component. Its base layer still reaches that page — the
+ * landing's body background comes from the design system's `--air-theme-background`, visible in
+ * the overscroll area — but the ~240 KB of CSS (about 40 KB gzip, most of it design tokens) buys
+ * the landing essentially nothing.
  *
  * Moving this import into the in-portal layouts was tried and reverted: Vite does emit a separate
  * CSS chunk per layout, but Nuxt does NOT reference it from the prerendered HTML, so every
