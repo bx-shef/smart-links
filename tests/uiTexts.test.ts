@@ -80,6 +80,19 @@ describe('русские тексты интерфейса', () => {
     expect(stubs).toEqual([])
   })
 
+  it('содержат каждый ключ, который запрашивает интерфейс', () => {
+    // The mirror image of the orphan check, and the one that actually bit: the cleanup pass deleted
+    // `layout.default.navbarHeader.feedback` while the landing navbar still asked for it, so the
+    // button rendered its own key as the label. vue-i18n only warns about that at runtime, and the
+    // warning scrolls past in a build log — here it fails the suite.
+    const blob = sourceBlob()
+    const asked = new Set<string>()
+    for (const m of blob.matchAll(/\$?t\(\s*['"]([a-z][\w.-]*\.[\w.-]+)['"]/gi)) asked.add(m[1]!)
+    expect(asked.size).toBeGreaterThan(10)
+    const missing = [...asked].filter(k => !(k in texts))
+    expect(missing).toEqual([])
+  })
+
   it('не содержат ключей, на которые никто не ссылается', () => {
     // An orphan key is how the demo leftovers survived a cleanup pass: nothing rendered them, so
     // nothing flagged them, and they stayed until someone read the file line by line.

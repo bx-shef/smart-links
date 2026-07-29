@@ -2,7 +2,7 @@
 import type { B24Frame, TypePullMessage } from '@bitrix24/b24jssdk'
 import type { UfSmartLinkType } from '#shared/types/base'
 import { EnumCrmEntityTypeId, Type  } from '@bitrix24/b24jssdk'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { usePageStore } from '~/stores/page'
 import { useLinkStore } from '~/stores/link'
 import { useUserStore } from '~/stores/user'
@@ -15,6 +15,9 @@ import RefreshIcon from '@bitrix24/b24icons-vue/outline/RefreshIcon'
 definePageMeta({
   layout: 'uf-placement'
 })
+
+/** Floor for the placement height, so an empty state does not collapse to nothing. */
+const MIN_PLACEMENT_HEIGHT = 85
 
 interface EntityItem {
   id: number
@@ -33,6 +36,22 @@ const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 const isSetUfSettings = ref(true)
 const isEditMode = ref(false)
+/**
+ * Message for a failed action (search / link / unlink), shown inside the placement.
+ *
+ * These are recoverable: the card is fine, the field is configured, one REST call did not go
+ * through. Routing them to `processErrorGlobal` replaced the whole placement — a 65 px window
+ * inside someone's CRM card — with the full-screen error page, so a hiccup in the search looked
+ * like the app had died and took the linked record's controls away with it. Only a failure that
+ * leaves nothing to show (no frame, no settings) belongs on the error page.
+ */
+const actionError = ref('')
+
+/** Log the real error for support and show the user what to do about it. */
+function reportActionError(error: unknown, messageKey: string) {
+  $logger.error(error)
+  actionError.value = t(messageKey)
+}
 
 /**
  * UF field code of the current placement
@@ -356,12 +375,10 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
       listEntity.value = listResult
     }
 
+    actionError.value = ''
+
   } catch (error) {
-    processErrorGlobal(error, {
-      homePageIsHide: true,
-      isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link'
-    })
+    reportActionError(error, 'uf.smart-link.error.load')
   } finally {
     if (isFixLoadPage) {
       await sleepAction(1000)
@@ -372,21 +389,36 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
 // endregion ////
 
 // region Actions ////
+/**
+ * Open a portal path.
+ *
+ * Always prefer the portal's own slider. This page lives in an iframe inside a CRM card, where
+ * `window.open` is blocked by popup blockers, opens a bare tab in the Bitrix24 mobile client, and
+ * breaks the "create the record, come back to the card" flow the placement is built around.
+ * Lists paths used to bypass the slider on the assumption it could not handle them — so try it
+ * first and fall back only if it actually refuses.
+ *
+ * Resolves when the slider closes, which is what lets the caller refresh afterwards without
+ * polling `window.closed` (a poll that popup blockers and cross-origin rules break anyway).
+ */
+async function openInPortal(path: URL): Promise<void> {
+  if (!$b24) {
+    return
+  }
+  try {
+    await $b24.slider.openPath(path, 950)
+  } catch {
+    window.open(path.toString(), '_blank')
+  }
+}
+
 async function makeOpenLink() {
   if (!$b24) {
     return
   }
 
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', link.id.toString())
-  const path = $b24.slider.getUrl(url)
-  if (link.entityMode === 'lists') {
-    window.open(path, '_blank')
-    return
-  }
-  await $b24?.slider.openPath(
-    path,
-    950
-  )
+  await openInPortal($b24.slider.getUrl(url))
 }
 
 /**
@@ -424,22 +456,12 @@ async function addNewEntity() {
       shSmartLink_ENTITY_TYPE_ID: `${currentEntityTypeId.value}`,
     }).toString()
 
-    const myWindow = window.open(`${path.toString()}?${query}` , '_blank')
-    const timer = setInterval(async () => {
-      if (myWindow && myWindow.closed) {
-        clearInterval(timer)
-
-        await loadData()
-      }
-    }, 500)
-
+    await openInPortal(new URL(`${path.toString()}?${query}`))
+    await loadData()
     return
   }
 
-  await $b24?.slider.openPath(
-    path,
-    950
-  )
+  await openInPortal(path)
 }
 
 async function makeOpenLinkById(entity: EntityItem) {
@@ -448,16 +470,7 @@ async function makeOpenLinkById(entity: EntityItem) {
   }
 
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', entity.id.toString())
-  const path = $b24.slider.getUrl(url)
-
-  if (link.entityMode === 'lists') {
-    window.open(path, '_blank')
-    return
-  }
-  await $b24?.slider.openPath(
-    path,
-    950
-  )
+  await openInPortal($b24.slider.getUrl(url))
 }
 
 async function makeAddLink(entity: EntityItem) {
@@ -501,11 +514,7 @@ async function makeAddLink(entity: EntityItem) {
     })
     await loadData()
   } catch (error) {
-    processErrorGlobal(error, {
-      homePageIsHide: true,
-      isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link'
-    })
+    reportActionError(error, 'uf.smart-link.error.link')
   } finally {
     page.isLoading = false
   }
@@ -547,11 +556,7 @@ async function makeUnLink() {
     link.makeEmpty(configUfSetting.value.target.entityTypeId, configUfSetting.value.target.entityMode)
     await loadData()
   } catch (error) {
-    processErrorGlobal(error, {
-      homePageIsHide: true,
-      isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link'
-    })
+    reportActionError(error, 'uf.smart-link.error.unlink')
   } finally {
     page.isLoading = false
   }
@@ -578,15 +583,18 @@ const makeSendPullCommandHandler = async (message: TypePullMessage) => {
 // endregion ////
 
 // region Tools ////
+// The placement keeps whatever height the portal gave it, so an alert appearing below the content
+// would be clipped out of sight — ask for a new measurement whenever it shows up or goes away.
+watch(actionError, async () => {
+  await nextTick()
+  await resizeWindow()
+})
+
 async function resizeWindow() {
-  await $b24?.parent.resizeWindow(
-    340,
-    isEditMode.value
-      ? 260
-      : link.isEmpty
-        ? 270
-        : 85
-  )
+  // Size to the actual content rather than to hardcoded numbers. The fixed 340 px width came from
+  // the donor template and stayed the same on a phone as on a wide monitor; the height was a
+  // three-way guess that went wrong as soon as a record title wrapped.
+  await $b24?.parent.resizeWindowAuto(undefined, MIN_PLACEMENT_HEIGHT)
 }
 // endregion ////
 
@@ -677,10 +685,17 @@ onUnmounted(() => {
     </div>
     <template v-else>
       <div class="relative overflow-hidden">
+        <B24Alert
+          v-if="actionError"
+          class="mb-[4px]"
+          size="sm"
+          color="air-primary-alert"
+          :description="actionError"
+        />
         <div v-if="link.isEmpty" class="h-[245px]">
           <B24TableWrapper
             size="xs"
-            class="overflow-x-auto w-full h-[235px] bg-white"
+            class="overflow-x-auto w-full h-[235px] bg-(--ui-color-base-white-fixed)"
             pin-rows
             :row-hover="listEntity.length > 0"
             bordered
@@ -749,7 +764,7 @@ onUnmounted(() => {
           <div class="flex flex-col gap-[4px]">
             <B24Link
               is-action
-              class="text-[16px] w-[250px] truncate"
+              class="text-[16px] w-full min-w-0 truncate"
               @click="makeOpenLink"
             >
               {{ link.title }}
