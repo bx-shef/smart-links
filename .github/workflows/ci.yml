@@ -13,6 +13,14 @@ on:
 permissions:
   contents: read
 
+# One run per branch. Pushing a follow-up commit to a PR cancels the run for the commit it
+# replaced — that run can only report on code nobody will merge, and it holds a runner while a
+# `pnpm build` (the slow step) finishes for nothing. `main` is excluded from cancellation by the
+# group key including the ref, so a merge run is never killed by the next merge.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   ci:
     name: ci
