@@ -6,6 +6,7 @@ import { EnumCrmEntityTypeId, AjaxError, Type } from '@bitrix24/b24jssdk'
 import { usePageStore } from '~/stores/page'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
+import { DEFAULT_IBLOCK_TYPE_ID } from '~/utils/listsTarget'
 import CloudErrorIcon from '@bitrix24/b24icons-vue/main/CloudErrorIcon'
 
 definePageMeta({
@@ -35,6 +36,7 @@ function createEmptyConfig(): UfSmartLinkType {
     },
     target: {
       entityMode: 'crm',
+      iblockTypeId: DEFAULT_IBLOCK_TYPE_ID,
       entityTypeId: EnumCrmEntityTypeId.deal,
       customFilter: {},
       clientFields: { companyId: 'companyId', contactId: 'contactId', myCompanyId: undefined, dogovorId: undefined }
@@ -50,6 +52,19 @@ const customFilterText = ref('{}')
 const entityModeItems = computed(() => [
   { label: t('page.app-options.form.entityMode.crm'), value: 'crm' },
   { label: t('page.app-options.form.entityMode.lists'), value: 'lists' }
+])
+
+// Which section of the portal the target list lives in. Verified live: a portal can hold nothing
+// under `lists` and five under `bitrix_processes`, and asking the wrong section is a hard REST
+// error rather than an empty answer — so the admin has to be able to say which one.
+// Labels spelled out rather than built from the value: an interpolated key is invisible to the
+// locale guards in tests/uiTexts.test.ts, which then start demanding the deletion of keys that are
+// very much in use. `value` is widened to string because the stored setting is `string | undefined`
+// (a portal may carry a custom iblock type), so a literal union would be narrower than the field.
+const iblockTypeItems = computed<{ label: string, value: string }[]>(() => [
+  { label: t('page.app-options.form.iblockTypeId.lists'), value: 'lists' },
+  { label: t('page.app-options.form.iblockTypeId.bitrix_processes'), value: 'bitrix_processes' },
+  { label: t('page.app-options.form.iblockTypeId.lists_socnet'), value: 'lists_socnet' }
 ])
 
 // CRM targets are constrained to the entity types the path resolvers support
@@ -288,6 +303,20 @@ onUnmounted(() => {
           value-key="value"
           label-key="label"
           orientation="horizontal"
+        />
+      </B24FormField>
+
+      <B24FormField
+        v-if="ufSmartLink.target.entityMode === 'lists'"
+        :label="$t('page.app-options.form.iblockTypeId.label')"
+        :help="$t('page.app-options.form.iblockTypeId.help')"
+      >
+        <B24Select
+          v-model="ufSmartLink.target.iblockTypeId"
+          :items="iblockTypeItems"
+          value-key="value"
+          label-key="label"
+          class="w-full"
         />
       </B24FormField>
 

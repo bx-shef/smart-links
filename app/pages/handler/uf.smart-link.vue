@@ -8,6 +8,7 @@ import { useLinkStore } from '~/stores/link'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
 import { sleepAction } from '~/utils/sleep'
+import { resolveIblockTypeId } from '~/utils/listsTarget'
 import DeleteHyperlinkIcon from '@bitrix24/b24icons-vue/main/DeleteHyperlinkIcon'
 import DocumentPlusIcon from '@bitrix24/b24icons-vue/main/DocumentPlusIcon'
 import RefreshIcon from '@bitrix24/b24icons-vue/outline/RefreshIcon'
@@ -218,7 +219,7 @@ async function loadDataFromPortal(
       const responseTargetEntity = await $b24.callMethod(
         'lists.element.get',
         {
-          IBLOCK_TYPE_ID: configUfSetting.value.target.entityMode,
+          IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value.target),
           IBLOCK_ID: configUfSetting.value.target.entityTypeId,
           SELECT: [
             'ID',
@@ -346,7 +347,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
       }
 
       const params = {
-        IBLOCK_TYPE_ID: configUfSetting.value.target.entityMode,
+        IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value.target),
         IBLOCK_ID: link.entityTypeId,
         SELECT: [
           'ID',
@@ -378,7 +379,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
         filter['%NAME'] = filterTitle.value
 
         const params = {
-          IBLOCK_TYPE_ID: configUfSetting.value.target.entityMode,
+          IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value.target),
           IBLOCK_ID: link.entityTypeId,
           SELECT: [
             'ID',

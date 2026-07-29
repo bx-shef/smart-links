@@ -44,6 +44,12 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
 - `public/` — статика (аватары, favicon, robots).
 - `tools/` — оффлайн: `translate.ui.ts` (перевод локалей через DeepSeek), `fix-paths.mjs` +
   `create-archive.mjs` (упаковка архива для B24).
+- `scripts/b24-smoke.mjs` (`pnpm b24:smoke`) — живая сверка REST-фактов с реальным порталом по
+  вебхуку из `.env.b24test` (в репозиторий не коммитим). Только чтение, вебхук в вывод не попадает.
+  ⚠ Вебхук работает **вне контекста приложения**, поэтому `userfieldtype.*`, `app.option.*` и
+  `placement.*` через него недоступны в принципе (`Application context required`) — регистрация
+  UF-типа, хранилище настроек и рукопожатие плейсмента проверяются только на установленном
+  приложении (живой прогон за владельцем). Скрипт это печатает, а не делает вид, что покрыл.
 - `template/` — HTML-шаблон загрузчика dev-сервера.
 - `server/` — Nitro: `api/` (`health`, `app-rating` get/post, `b24/events` — вебхук install/uninstall),
   `utils/` (фрейм-токен, SSRF-гард + allowlist зон Б24, политика и store рейтинга, OAuth-хранилище
@@ -68,6 +74,7 @@ pnpm lint:fix     # ESLint --fix
 pnpm typecheck    # nuxt prepare + vue-tsc
 pnpm test         # Vitest (unit)
 pnpm check        # lint + typecheck + test
+pnpm b24:smoke    # живая сверка REST-фактов с порталом (нужен .env.b24test, только чтение)
 pnpm build        # served-сборка (Nitro, preset node-server) + пререндер — основной путь деплоя
 pnpm generate     # SSG-сборка в .output/public
 pnpm generate-archive-for-b24  # generate → fix-paths → create-archive (архив для портала)
@@ -102,6 +109,15 @@ pnpm translate-ui # оффлайн-перевод локалей (нужен DEE
   карточки через pull-команду `reload.options`.
 - **UF-тип** регистрируется на установке (`userfieldtype.add`, `USER_TYPE_ID =
   type_smart_link_<dev|prod>`, `HANDLER` = URL страницы-обработчика).
+- **Раздел Списка (`IBLOCK_TYPE_ID`) — отдельная настройка, а не наш `entityMode`.** Раньше в
+  `lists.element.get` уходил наш же дискриминатор `'crm' | 'lists'`, чья ветка `lists` случайно
+  совпадает с одним из трёх реальных типов инфоблока. **Проверено на живом портале:** тот же
+  портал держит 0 списков в `lists` и 5 в `bitrix_processes`, а неверный тип — это **жёсткая
+  ошибка** «Неверный тип информационного блока», а не пустой ответ. То есть на таком портале
+  половина функции («цель — элемент Списка») не работала вовсе и выглядела как поломка.
+  Резолвер — `app/utils/listsTarget.ts` (чистый, с тестами), выбор — в настройках поля,
+  фолбэк — `lists`. Неизвестный тип пробрасываем как есть: у портала бывают свои инфоблоки, и
+  ошибка Битрикса понятнее нашей подмены.
 - **Market OAuth (S4)** — вебхук `POST /api/b24/events` (ONAPPINSTALL/ONAPPUNINSTALL), таблица
   `portal_tokens` (ключ `member_id`), `refresh_token` шифруется **AES-256-GCM**
   (`B24_TOKEN_ENC_KEY`; без ключа установка отвечает 503, а не кладёт долгоживущий секрет
