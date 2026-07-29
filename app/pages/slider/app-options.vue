@@ -6,7 +6,7 @@ import { EnumCrmEntityTypeId, AjaxError, Type } from '@bitrix24/b24jssdk'
 import { usePageStore } from '~/stores/page'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
-import { DEFAULT_IBLOCK_TYPE_ID } from '~/utils/listsTarget'
+import { DEFAULT_IBLOCK_TYPE_ID, ENUMERABLE_IBLOCK_TYPES, resolveIblockTypeId } from '~/utils/listsTarget'
 import CloudErrorIcon from '@bitrix24/b24icons-vue/main/CloudErrorIcon'
 
 definePageMeta({
@@ -54,24 +54,138 @@ const entityModeItems = computed(() => [
   { label: t('page.app-options.form.entityMode.lists'), value: 'lists' }
 ])
 
-// Which section of the portal the target list lives in. Verified live: a portal can hold nothing
-// under `lists` and five under `bitrix_processes`, and asking the wrong section is a hard REST
-// error rather than an empty answer — so the admin has to be able to say which one.
-// Labels spelled out rather than built from the value: an interpolated key is invisible to the
-// locale guards in tests/uiTexts.test.ts, which then start demanding the deletion of keys that are
-// very much in use. `value` is widened to string because the stored setting is `string | undefined`
-// (a portal may carry a custom iblock type), so a literal union would be narrower than the field.
-const iblockTypeItems = computed<{ label: string, value: string }[]>(() => [
-  { label: t('page.app-options.form.iblockTypeId.lists'), value: 'lists' },
-  { label: t('page.app-options.form.iblockTypeId.bitrix_processes'), value: 'bitrix_processes' },
-  { label: t('page.app-options.form.iblockTypeId.lists_socnet'), value: 'lists_socnet' }
-])
-
 // CRM targets are constrained to the entity types the path resolvers support
 // (see appSettings.getTargetPath). Currently only Deal.
 const crmTypeItems = computed(() => [
   { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal }
 ])
+// endregion ////
+
+// region Pickers ////
+// The two settings an admin used to have to type from memory: the destination field's UF code and,
+// for a Lists target, the list's numeric id. Both exist in the portal and can simply be offered —
+// typing them is how a setup ends up pointing at a field that does not exist, with nothing to say
+// so until a user opens a card.
+//
+// Both pickers are fail-soft. If the portal refuses the lookup (rights, an unusual entity), the
+// form falls back to the free-text input it always had rather than blocking the admin behind a
+// list we could not fetch.
+interface ListItem { label: string, value: number, section: string }
+
+const sourceEntityTypeId = ref(0)
+const ufFieldItems = ref<{ label: string, value: string }[]>([])
+const ufFieldsUnavailable = ref(false)
+const listItems = ref<ListItem[]>([])
+const listsUnavailable = ref(false)
+const manualListError = ref('')
+
+async function loadUfFields() {
+  ufFieldsUnavailable.value = false
+  if (!$b24 || sourceEntityTypeId.value < 1) {
+    ufFieldsUnavailable.value = true
+    return
+  }
+  try {
+    const response = await $b24.callMethod('crm.item.fields', { entityTypeId: sourceEntityTypeId.value })
+    const fields = response.getData().result?.fields ?? {}
+    ufFieldItems.value = Object.entries(fields)
+      // User fields only: the destination has to be a field the admin created, never a system one.
+      // Bitrix24 spells them `ufCrm…` in the camelCase item API and `UF_CRM_…` in the legacy one.
+      .filter(([code]) => /^uf/i.test(code))
+      .map(([code, meta]) => ({
+        label: (meta as any)?.title ? `${(meta as any).title} — ${code}` : code,
+        value: code
+      }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+    ufFieldsUnavailable.value = ufFieldItems.value.length === 0
+  } catch (error) {
+    $logger.error(error)
+    ufFieldsUnavailable.value = true
+  }
+}
+
+/**
+ * Offer every list this portal will enumerate, across sections.
+ *
+ * This replaces asking the admin which section their list lives in. That question was a bad one to
+ * ask: Bitrix24's own menus do not use the section names the REST API does — universal lists sit
+ * under Автоматизация → Списки while `bitrix_processes` sits under Лента → Ещё → Процессы — so any
+ * label we wrote sent some admins to the wrong answer, and a wrong section is a hard REST error.
+ * Picking the list itself makes the section a fact we read rather than a guess they make.
+ *
+ * `lists_socnet` is not enumerated: `lists.get` needs a workgroup id for it, which this screen does
+ * not have. Those lists go through the manual path below, which resolves the section from the id.
+ */
+async function loadLists() {
+  listsUnavailable.value = false
+  listItems.value = []
+  if (!$b24) {
+    listsUnavailable.value = true
+    return
+  }
+  const collected: ListItem[] = []
+  for (const section of ENUMERABLE_IBLOCK_TYPES) {
+    try {
+      const response = await $b24.callMethod('lists.get', { IBLOCK_TYPE_ID: section })
+      const rows = response.getData().result ?? []
+      for (const row of (Array.isArray(rows) ? rows : [])) {
+        collected.push({ label: `${row.NAME} — ${row.ID}`, value: Number.parseInt(row.ID), section })
+      }
+    } catch (error) {
+      // One section refusing (rights) must not hide the other's lists.
+      $logger.error(error)
+    }
+  }
+  listItems.value = collected.sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  listsUnavailable.value = collected.length === 0
+}
+
+/** Record the section along with the list, so the placement queries where the list actually is. */
+function onListPicked(listId: number) {
+  const picked = listItems.value.find(item => item.value === listId)
+  if (picked) {
+    ufSmartLink.value.target.iblockTypeId = picked.section
+  }
+}
+
+/**
+ * Resolve the section for a list id typed by hand.
+ *
+ * `lists.get.iblock.type.id` answers exactly this question, so a list we could not enumerate (a
+ * workgroup or project list, a custom information block) still does not need the admin to know
+ * REST section codes. `null` means no list carries that id — worth saying, because the alternative
+ * is a field that looks configured and finds nothing.
+ */
+async function resolveSectionForTypedId() {
+  manualListError.value = ''
+  const id = Number(ufSmartLink.value.target.entityTypeId)
+  if (!$b24 || !(id > 0)) {
+    return
+  }
+  try {
+    const response = await $b24.callMethod('lists.get.iblock.type.id', { IBLOCK_ID: id })
+    const section = response.getData().result
+    if (typeof section === 'string' && section) {
+      ufSmartLink.value.target.iblockTypeId = section
+    } else {
+      manualListError.value = t('page.app-options.form.listId.notFound')
+    }
+  } catch (error) {
+    $logger.error(error)
+    manualListError.value = t('page.app-options.form.listId.notFound')
+  }
+}
+
+// Search and linking work in every section; opening a record in the portal is only proven for the
+// universal-lists one, because the URL the app builds is that section's. Say so where the admin can
+// act on it rather than letting them find out from a broken tab.
+const listSectionWarning = computed(() => {
+  if (ufSmartLink.value.target.entityMode !== 'lists') {
+    return ''
+  }
+  const section = resolveIblockTypeId(ufSmartLink.value.target)
+  return section === DEFAULT_IBLOCK_TYPE_ID ? '' : t('page.app-options.form.listId.openUnverified')
+})
 // endregion ////
 
 // region Validation ////
@@ -113,6 +227,9 @@ function loadData() {
   }
 
   ufCode.value = $b24.placement.options['ufCode']
+  // Passed by the placement that opened this slider; absent when the slider is reached any other
+  // way, in which case the field picker degrades to the free-text input.
+  sourceEntityTypeId.value = Number.parseInt($b24.placement.options['sourceEntityTypeId']) || 0
   if (!Type.isStringFilled(ufCode.value)) {
     processErrorGlobal(
       new Error(t('page.app-options.error.notUfCodeSet')),
@@ -133,6 +250,12 @@ function loadData() {
     ? JSON.parse(JSON.stringify(existing))
     : createEmptyConfig()
 
+  // Normalise the section to the value the placement will actually use. An older config has no
+  // `iblockTypeId` at all, and leaving it unset meant the screen showed nothing while the placement
+  // quietly queried `lists` — the one screen built to fix a wrong-section field let you save
+  // straight past it.
+  ufSmartLink.value.target.iblockTypeId = resolveIblockTypeId(ufSmartLink.value.target)
+
   customFilterText.value = JSON.stringify(ufSmartLink.value.target.customFilter ?? {}, null, 2)
 }
 
@@ -142,8 +265,16 @@ function loadData() {
 function setupEntityModeWatch() {
   watch(
     () => ufSmartLink.value.target.entityMode,
-    (mode) => {
+    async (mode) => {
       ufSmartLink.value.target.entityTypeId = mode === 'crm' ? EnumCrmEntityTypeId.deal : 0
+      // Reset the section along with the id. Leaving a previous section behind was the same class
+      // of leftover this watcher already existed to prevent for entityTypeId, and it would show as
+      // a stale "opening is unverified" warning against a list the admin has not chosen yet.
+      ufSmartLink.value.target.iblockTypeId = DEFAULT_IBLOCK_TYPE_ID
+      manualListError.value = ''
+      if (mode === 'lists') {
+        await loadLists()
+      }
     }
   )
 }
@@ -256,6 +387,12 @@ onMounted(async () => {
     startPullClient()
 
     loadData()
+    // After loadData, so the lookups see the loaded config; awaited so the admin does not get a
+    // free-text input that turns into a select under their cursor.
+    await loadUfFields()
+    if (ufSmartLink.value.target.entityMode === 'lists') {
+      await loadLists()
+    }
     setupEntityModeWatch()
   } catch (error) {
     processErrorGlobal(error, {
@@ -289,7 +426,16 @@ onUnmounted(() => {
         :error="shownErrors.ufDestination"
         required
       >
+        <B24Select
+          v-if="!ufFieldsUnavailable"
+          v-model="ufSmartLink.ufDestination"
+          :items="ufFieldItems"
+          value-key="value"
+          label-key="label"
+          class="w-full"
+        />
         <B24Input
+          v-else
           v-model="ufSmartLink.ufDestination"
           class="w-full"
           :placeholder="$t('page.app-options.form.ufDestination.placeholder')"
@@ -307,13 +453,14 @@ onUnmounted(() => {
       </B24FormField>
 
       <B24FormField
-        v-if="ufSmartLink.target.entityMode === 'lists'"
-        :label="$t('page.app-options.form.iblockTypeId.label')"
-        :help="$t('page.app-options.form.iblockTypeId.help')"
+        v-if="ufSmartLink.target.entityMode === 'crm'"
+        :label="$t('page.app-options.form.crmType.label')"
+        :error="shownErrors.entityTypeId"
+        required
       >
         <B24Select
-          v-model="ufSmartLink.target.iblockTypeId"
-          :items="iblockTypeItems"
+          v-model="ufSmartLink.target.entityTypeId"
+          :items="crmTypeItems"
           value-key="value"
           label-key="label"
           class="w-full"
@@ -321,21 +468,45 @@ onUnmounted(() => {
       </B24FormField>
 
       <B24FormField
-        :label="$t('page.app-options.form.entityTypeId.label')"
-        :help="$t('page.app-options.form.entityTypeId.help')"
-        :error="shownErrors.entityTypeId"
+        v-else
+        :label="$t('page.app-options.form.listId.label')"
+        :help="$t('page.app-options.form.listId.help')"
+        :error="shownErrors.entityTypeId || manualListError"
         required
       >
+        <!--
+          One control, every section. The admin picks the list by name; which portal section it
+          lives in is read off the answer, not asked as a question — see loadLists() for why asking
+          was the wrong design.
+        -->
         <B24Select
-          v-if="ufSmartLink.target.entityMode === 'crm'"
+          v-if="!listsUnavailable"
           v-model="ufSmartLink.target.entityTypeId"
-          :items="crmTypeItems"
+          :items="listItems"
           value-key="value"
           label-key="label"
           class="w-full"
+          @update:model-value="onListPicked"
         />
-        <B24InputNumber v-else v-model="ufSmartLink.target.entityTypeId" class="w-full" />
+        <!--
+          Fallback for a list the portal would not enumerate (a group or project list, a custom
+          information block). The number still does not require knowing section codes: the section
+          is resolved from the id on blur.
+        -->
+        <B24InputNumber
+          v-else
+          v-model="ufSmartLink.target.entityTypeId"
+          class="w-full"
+          @blur="resolveSectionForTypedId"
+        />
       </B24FormField>
+
+      <B24Alert
+        v-if="listSectionWarning"
+        size="sm"
+        color="air-primary-warning"
+        :description="listSectionWarning"
+      />
 
       <B24FormField
         :label="$t('page.app-options.form.targetCompanyField.label')"

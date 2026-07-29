@@ -48,7 +48,9 @@ describe('русские тексты интерфейса', () => {
   it('не показывают пользователю внутренний жаргон', () => {
     // «сущность», «UF», «JSON», «инфоблок» mean nothing to a portal administrator. Where the
     // concept is unavoidable it is spelled out in their words instead ("номер типа записи").
-    const jargon = ['сущност', 'UF-', '(UF)', 'Uf ', 'entityTypeId', 'инфоблок', 'JSON', 'конфигурац', 'плейсмент']
+    // «информационн» alongside «инфоблок»: the ban is on the CONCEPT, and the expanded spelling
+    // «информационного блока» walked straight past a banlist that only held the contraction.
+    const jargon = ['сущност', 'UF-', '(UF)', 'Uf ', 'entityTypeId', 'инфоблок', 'информационн', 'JSON', 'конфигурац', 'плейсмент']
     const hits = Object.entries(texts).filter(([, v]) => jargon.some(j => v.includes(j)))
     expect(hits).toEqual([])
   })

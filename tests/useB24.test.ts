@@ -18,7 +18,7 @@ vi.mock('@bitrix24/b24jssdk', () => ({
 async function loadUseB24() {
   vi.resetModules()
   const mod = await import('~/composables/useB24')
-  return mod.useB24()
+  return { ...mod.useB24(), timeoutMs: mod.B24_INIT_TIMEOUT_MS }
 }
 
 const fakeFrame = (accessToken = 'tok', domain = 'portal.bitrix24.by') => ({
@@ -85,9 +85,9 @@ describe('useB24().init', () => {
     vi.useFakeTimers()
     initializeB24Frame.mockReturnValue(new Promise(() => {}))
 
-    const { init } = await loadUseB24()
+    const { init, timeoutMs } = await loadUseB24()
     const pending = init()
-    await vi.advanceTimersByTimeAsync(10_000)
+    await vi.advanceTimersByTimeAsync(timeoutMs)
 
     await expect(pending).resolves.toBeNull()
   })
@@ -95,13 +95,17 @@ describe('useB24().init', () => {
   it('does not give up early on a slow but working portal', async () => {
     vi.useFakeTimers()
     const frame = fakeFrame()
+    const probe = await loadUseB24()
+    // Just inside the deadline, expressed from the constant so raising it cannot turn this test
+    // into a five-second vitest timeout with no useful message.
+    const almost = probe.timeoutMs - 1_000
     initializeB24Frame.mockReturnValue(
-      new Promise(resolve => setTimeout(() => resolve(frame), 9_000))
+      new Promise(resolve => setTimeout(() => resolve(frame), almost))
     )
 
     const { init } = await loadUseB24()
     const pending = init()
-    await vi.advanceTimersByTimeAsync(9_000)
+    await vi.advanceTimersByTimeAsync(almost)
 
     await expect(pending).resolves.toBe(frame)
   })

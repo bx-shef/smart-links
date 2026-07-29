@@ -10,8 +10,17 @@ export const IBLOCK_TYPE_IDS = ['lists', 'bitrix_processes', 'lists_socnet'] as 
 
 export type IblockTypeId = typeof IBLOCK_TYPE_IDS[number]
 
-/** What a target with no explicit type falls back to — the company-wide Lists section. */
+/** What a target with no explicit type falls back to — the universal Lists section. */
 export const DEFAULT_IBLOCK_TYPE_ID: IblockTypeId = 'lists'
+
+/**
+ * Sections `lists.get` will enumerate from an application context with no further coordinates.
+ *
+ * `lists_socnet` is excluded because workgroup and project lists are scoped to a group, and
+ * `lists.get` errors without its id — which this app never has. Those lists are still usable: the
+ * settings screen resolves their section from the list id via `lists.get.iblock.type.id`.
+ */
+export const ENUMERABLE_IBLOCK_TYPES: readonly IblockTypeId[] = ['lists', 'bitrix_processes']
 
 /**
  * Resolve the `IBLOCK_TYPE_ID` to send with a `lists.element.get` call.
@@ -27,6 +36,10 @@ export const DEFAULT_IBLOCK_TYPE_ID: IblockTypeId = 'lists'
  * and the REST error for a genuinely wrong one is clearer than us guessing a default.
  */
 export function resolveIblockTypeId(target: Pick<UfSmartLinkType['target'], 'iblockTypeId'>): string {
-  const configured = (target.iblockTypeId ?? '').trim()
+  // The typeof check is not belt-and-braces. Settings come back from `app.option.get` as whatever
+  // JSON is stored against the portal, and nothing validates them per field on the way in — so a
+  // hand-edited or half-migrated option can put a number or an object here, and `.trim()` on it
+  // throws inside the placement's load path.
+  const configured = typeof target.iblockTypeId === 'string' ? target.iblockTypeId.trim() : ''
   return configured || DEFAULT_IBLOCK_TYPE_ID
 }
