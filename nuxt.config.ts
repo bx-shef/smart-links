@@ -33,6 +33,12 @@ export default defineNuxtConfig({
       b24FormLoaderScript: '',
       // Bitrix24 Market listing code; empty => rating prompt disabled (fail-safe).
       b24MarketCode: '',
+      // Publisher contact and legal details shown in the landing footer and the privacy page.
+      // Empty => the block is omitted entirely rather than rendered with a placeholder: the Market
+      // listing and the privacy policy are legal surfaces, and a stand-in there is worse than a
+      // gap, because a gap is visible and a plausible-looking placeholder is not.
+      supportEmail: '',
+      publisherDetails: '',
       // Public origin the app is served from, e.g. 'https://smart-links.example.com'. Used for the
       // landing's canonical/og:url. Empty => those tags are omitted (an absolute URL is required
       // and guessing one is worse than having none).
@@ -79,7 +85,9 @@ export default defineNuxtConfig({
       // Landing + in-portal pages as real static HTML (the landing needs indexable content;
       // in-portal pages are static shells that init the B24 frame client-side). /install is the
       // B24 install handler — prerendered so a HEAD request returns 200 for URL validation.
-      routes: ['/', '/app', '/install', '/handler/uf.smart-link', '/slider/app-options', '/slider/feedback']
+      // `/privacy` is prerendered because the Market listing needs a permanent, publicly reachable
+      // privacy-policy URL that answers without a portal, a session or JavaScript.
+      routes: ['/', '/privacy', '/app', '/install', '/handler/uf.smart-link', '/slider/app-options', '/slider/feedback']
     }
   },
   hooks: {

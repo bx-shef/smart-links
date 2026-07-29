@@ -41,6 +41,15 @@ useHead({
   link: () => (siteUrl.value ? [{ rel: 'canonical', href: `${siteUrl.value}/` }] : [])
 })
 
+// Market listing, support and legal details — each rendered only when configured. The Market
+// listing URL is built from the same code the rating prompt uses, so there is one place to set it.
+const marketUrl = computed(() => {
+  const code = String(config.public.b24MarketCode || '').trim()
+  return code ? `https://www.bitrix24.ru/apps/?app=${encodeURIComponent(code)}` : ''
+})
+const supportEmail = computed(() => String(config.public.supportEmail || '').trim())
+const publisherDetails = computed(() => String(config.public.publisherDetails || '').trim())
+
 const commit = computed(() => String(config.public.commitSha || 'dev'))
 // Only link a real build: 'dev' (local / no NUXT_PUBLIC_COMMIT_SHA) has nothing to point at.
 const build = computed(() => (commit.value === 'dev'
@@ -128,17 +137,41 @@ const features = computed(() => [
 
     <!-- Footer sits outside <main> so it is exposed as the page's contentinfo landmark. -->
     <footer class="border-t border-slate-200">
-      <div class="mx-auto flex max-w-5xl flex-col gap-2 px-6 py-8 text-sm text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-        <span>{{ $t('landing.footer.publisher') }}</span>
-        <a
-          v-if="build"
-          :href="build.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="hover:text-slate-900"
-        >
-          {{ $t('landing.footer.build') }} {{ build.sha }}
-        </a>
+      <div class="mx-auto max-w-5xl px-6 py-8 text-sm text-slate-500">
+        <div class="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div class="flex flex-wrap items-center gap-x-4 gap-y-2">
+            <a
+              v-if="marketUrl"
+              :href="marketUrl"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="hover:text-slate-900"
+            >
+              {{ $t('landing.footer.market') }}
+            </a>
+            <NuxtLink to="/privacy" class="hover:text-slate-900">
+              {{ $t('landing.footer.privacy') }}
+            </NuxtLink>
+            <a
+              v-if="supportEmail"
+              :href="`mailto:${supportEmail}`"
+              class="hover:text-slate-900"
+            >
+              {{ $t('landing.footer.support') }}
+            </a>
+          </div>
+          <a
+            v-if="build"
+            :href="build.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="hover:text-slate-900"
+          >
+            {{ $t('landing.footer.build') }} {{ build.sha }}
+          </a>
+        </div>
+        <p class="mt-4">{{ $t('landing.footer.publisher') }}</p>
+        <p v-if="publisherDetails" class="mt-1 whitespace-pre-line">{{ publisherDetails }}</p>
       </div>
     </footer>
   </div>
