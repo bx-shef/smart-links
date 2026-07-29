@@ -141,6 +141,29 @@ describe('deletePortal', () => {
     expect(db.tombstones.get('m1')).toBe(300)
   })
 
+  it('пишет тумбстоун ДО удаления — иначе сбой посередине снимает защиту', async () => {
+    // Транзакции здесь нет, а платформа может усыпить процесс в любой момент. При порядке
+    // «сначала удалить» сбой оставил бы портал удалённым БЕЗ тумбстоуна — ровно то состояние,
+    // от которого тумбстоун и защищает.
+    const db = fakeDb()
+    await saveToken(input(), db.query)
+    db.sql.length = 0
+    await deletePortal('m1', db.query, 200, 'a.bitrix24.by')
+    const tombstoneAt = db.sql.findIndex(q => q.includes('INSERT INTO portal_tombstone'))
+    const deleteAt = db.sql.findIndex(q => q.includes('DELETE FROM portal_tokens'))
+    expect(tombstoneAt).toBeGreaterThanOrEqual(0)
+    expect(tombstoneAt).toBeLessThan(deleteAt)
+  })
+
+  it('чистит строку рейтинга и по member_id, и по хосту', async () => {
+    // Портал, который мы видели до регистрации, ключуется хостом; такая строка иначе висела бы
+    // вечно — её ничто не подметает.
+    const db = fakeDb()
+    await deletePortal('m1', db.query, 200, 'a.bitrix24.by')
+    const call = db.sql.find(q => q.includes('DELETE FROM app_rating'))
+    expect(call).toBeDefined()
+  })
+
   it('writes no tombstone when there is no ts to record', async () => {
     const db = fakeDb()
     await deletePortal('m1', db.query, 0)

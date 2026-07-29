@@ -47,7 +47,19 @@ export default defineEventHandler(async (event) => {
   // yet and is authenticated by the delivered access_token instead. The env token is an optional
   // extra gate on first install — normally unset.
   const envToken = process.env.B24_APPLICATION_TOKEN ?? ''
-  const storedToken = dbEnabled() && ev.memberId ? await getApplicationToken(ev.memberId, query) : null
+  let storedToken: string | null = null
+  if (dbEnabled() && ev.memberId) {
+    try {
+      storedToken = await getApplicationToken(ev.memberId, query)
+    } catch (err) {
+      // `dbEnabled()` only says a DATABASE_URL is configured, not that Postgres is answering. An
+      // unhandled throw here becomes a 500 with no line of ours in the log — and since Bitrix does
+      // not retry, that registration is lost for good with nothing to diagnose it by.
+      setResponseStatus(event, 503)
+      console.error(`[b24-events] ${ev.event} portal=${hash} REJECTED: database unavailable (${(err as Error).message})`)
+      return { ok: false, error: 'database unavailable' }
+    }
+  }
   const decision = decideB24Event(ev, storedToken, envToken)
 
   if (decision.action === 'ignore') {
@@ -66,7 +78,13 @@ export default defineEventHandler(async (event) => {
   const domain = normaliseHost(ev.domain || String(auth.domain ?? ''))
 
   if (decision.action === 'unregister') {
-    await deletePortal(ev.memberId, query, ts, domain)
+    try {
+      await deletePortal(ev.memberId, query, ts, domain)
+    } catch (err) {
+      setResponseStatus(event, 503)
+      console.error(`[b24-events] ONAPPUNINSTALL portal=${hash} REJECTED: database unavailable (${(err as Error).message})`)
+      return { ok: false, error: 'database unavailable' }
+    }
     console.info(`[b24-events] ONAPPUNINSTALL portal=${hash} unregistered`)
     return { ok: true }
   }
@@ -132,22 +150,31 @@ export default defineEventHandler(async (event) => {
     return { ok: false, error: 'grant without refresh token' }
   }
 
-  const saved = await saveToken(
-    {
-      memberId: ev.memberId,
-      // Normalised (bare lower-case host) so the frame lookup, which normalises the same way,
-      // matches regardless of scheme or case.
-      domain,
-      clientEndpoint: grant.clientEndpoint || String(auth.client_endpoint ?? ''),
-      accessToken: grant.accessToken,
-      refreshTokenEnc: encryptSecret(grant.refreshToken, encKey),
-      applicationToken: ev.applicationToken,
-      expiresIn: grant.expiresIn,
-      issuedAtMs: Date.now()
-    },
-    query,
-    ts
-  )
+  let saved: boolean
+  try {
+    saved = await saveToken(
+      {
+        memberId: ev.memberId,
+        // Normalised (bare lower-case host) so the frame lookup, which normalises the same way,
+        // matches regardless of scheme or case.
+        domain,
+        clientEndpoint: grant.clientEndpoint || String(auth.client_endpoint ?? ''),
+        accessToken: grant.accessToken,
+        refreshTokenEnc: encryptSecret(grant.refreshToken, encKey),
+        applicationToken: ev.applicationToken,
+        expiresIn: grant.expiresIn,
+        issuedAtMs: Date.now()
+      },
+      query,
+      ts
+    )
+    // Carry any rating state the portal accumulated under its host key onto its member_id.
+    await migrateRatingKey(domain, ev.memberId, query)
+  } catch (err) {
+    setResponseStatus(event, 503)
+    console.error(`[b24-events] ${ev.event} portal=${hash} REJECTED: database unavailable (${(err as Error).message})`)
+    return { ok: false, error: 'database unavailable' }
+  }
 
   // Refused ⇒ a stale install arriving after a newer uninstall. Answer 200 so Bitrix stops
   // redelivering, but say so — silently discarding a registration is exactly the failure the owner
@@ -156,8 +183,6 @@ export default defineEventHandler(async (event) => {
     console.warn(`[b24-events] ONAPPINSTALL portal=${hash} SKIPPED: stale install after a newer uninstall`)
     return { ok: true, skipped: 'stale-install-after-uninstall' }
   }
-  // Carry any rating state the portal accumulated under its host key onto its member_id.
-  await migrateRatingKey(domain, ev.memberId, query)
   console.info(`[b24-events] ${ev.event} portal=${hash} registered`)
   return { ok: true }
 })
