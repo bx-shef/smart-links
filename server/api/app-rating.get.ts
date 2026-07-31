@@ -33,6 +33,17 @@ export default defineEventHandler(async (event) => {
     // across two rows, so skip it — this route is best-effort by design.
     return { show: false }
   }
-  const state = await getRatingState(portalKey, query)
+  // Postgres being down must not turn a best-effort route into a raw 500: the client treats any
+  // failure as "don't show", so answer that shape ourselves. The try covers ONLY the store read —
+  // shouldPrompt is pure policy code, and a bug there deserves a loud 500, not a silent false.
+  let state
+  try {
+    state = await getRatingState(portalKey, query)
+  } catch (err) {
+    // The error object itself (stack included), never portalKey — that is a portal identifier,
+    // and the logging policy is portalHash-only.
+    console.error('[app-rating] read failed:', err)
+    return { show: false }
+  }
   return { show: shouldPrompt(state, new Date()) }
 })

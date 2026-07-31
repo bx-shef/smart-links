@@ -63,7 +63,7 @@ const makeOpenFeedBack = async () => {
       </template>
 
       <div v-if="page.isLoading">
-        <div class="cursor-wait isolate absolute z-1000 inset-0 w-full flex flex-row flex-nowrap items-center justify-center h-[400px] min-h-[400px]">
+        <div role="status" :aria-label="$t('app.loading')" class="cursor-wait isolate absolute z-1000 inset-0 w-full flex flex-row flex-nowrap items-center justify-center h-[400px] min-h-[400px]">
           <BtnSpinnerIcon
             class="text-(--ui-color-design-plain-content-icon-secondary) size-[110px] animate-spin-slow"
             aria-hidden="true"

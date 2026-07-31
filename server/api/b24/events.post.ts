@@ -35,10 +35,20 @@ export default defineEventHandler(async (event) => {
   const declared = Number(getHeader(event, 'content-length') ?? '')
   if (Number.isFinite(declared) && declared > MAX_EVENT_BODY_BYTES) {
     setResponseStatus(event, 413)
+    console.warn('[b24-events] REJECTED: declared body over cap')
     return { ok: false, error: 'payload too large' }
   }
 
-  const body = (await readRawBody(event, 'utf8')) || ''
+  // The header check alone is not a cap. A chunked request carries no Content-Length, so
+  // `Number('')` is 0, the check above passes, and `readRawBody` would buffer the entire body —
+  // the exact memory spike this block claims to prevent, reachable while APP_EDGE_SECURITY (whose
+  // middleware rejects chunked-without-length) is off, which is the default. Meter the stream.
+  const body = await readBodyCapped(event)
+  if (body === null) {
+    setResponseStatus(event, 413)
+    console.warn('[b24-events] REJECTED: body over cap (chunked or mis-declared length)')
+    return { ok: false, error: 'payload too large' }
+  }
   const ev = extractEvent(parseBracketForm(body))
   const hash = portalHash(ev.memberId)
   const ts = clampEventTs(ev.ts)
@@ -47,7 +57,19 @@ export default defineEventHandler(async (event) => {
   // yet and is authenticated by the delivered access_token instead. The env token is an optional
   // extra gate on first install — normally unset.
   const envToken = process.env.B24_APPLICATION_TOKEN ?? ''
-  const storedToken = dbEnabled() && ev.memberId ? await getApplicationToken(ev.memberId, query) : null
+  let storedToken: string | null = null
+  if (dbEnabled() && ev.memberId) {
+    try {
+      storedToken = await getApplicationToken(ev.memberId, query)
+    } catch (err) {
+      // `dbEnabled()` only says a DATABASE_URL is configured, not that Postgres is answering. An
+      // unhandled throw here becomes a 500 with no line of ours in the log — and since Bitrix does
+      // not retry, that registration is lost for good with nothing to diagnose it by.
+      setResponseStatus(event, 503)
+      console.error(`[b24-events] ${ev.event} portal=${hash} REJECTED: database unavailable (${(err as Error).message})`)
+      return { ok: false, error: 'database unavailable' }
+    }
+  }
   const decision = decideB24Event(ev, storedToken, envToken)
 
   if (decision.action === 'ignore') {
@@ -66,7 +88,13 @@ export default defineEventHandler(async (event) => {
   const domain = normaliseHost(ev.domain || String(auth.domain ?? ''))
 
   if (decision.action === 'unregister') {
-    await deletePortal(ev.memberId, query, ts, domain)
+    try {
+      await deletePortal(ev.memberId, query, ts, domain)
+    } catch (err) {
+      setResponseStatus(event, 503)
+      console.error(`[b24-events] ONAPPUNINSTALL portal=${hash} REJECTED: database unavailable (${(err as Error).message})`)
+      return { ok: false, error: 'database unavailable' }
+    }
     console.info(`[b24-events] ONAPPUNINSTALL portal=${hash} unregistered`)
     return { ok: true }
   }
@@ -132,22 +160,31 @@ export default defineEventHandler(async (event) => {
     return { ok: false, error: 'grant without refresh token' }
   }
 
-  const saved = await saveToken(
-    {
-      memberId: ev.memberId,
-      // Normalised (bare lower-case host) so the frame lookup, which normalises the same way,
-      // matches regardless of scheme or case.
-      domain,
-      clientEndpoint: grant.clientEndpoint || String(auth.client_endpoint ?? ''),
-      accessToken: grant.accessToken,
-      refreshTokenEnc: encryptSecret(grant.refreshToken, encKey),
-      applicationToken: ev.applicationToken,
-      expiresIn: grant.expiresIn,
-      issuedAtMs: Date.now()
-    },
-    query,
-    ts
-  )
+  let saved: boolean
+  try {
+    saved = await saveToken(
+      {
+        memberId: ev.memberId,
+        // Normalised (bare lower-case host) so the frame lookup, which normalises the same way,
+        // matches regardless of scheme or case.
+        domain,
+        clientEndpoint: grant.clientEndpoint || String(auth.client_endpoint ?? ''),
+        accessToken: grant.accessToken,
+        refreshTokenEnc: encryptSecret(grant.refreshToken, encKey),
+        applicationToken: ev.applicationToken,
+        expiresIn: grant.expiresIn,
+        issuedAtMs: Date.now()
+      },
+      query,
+      ts
+    )
+    // Carry any rating state the portal accumulated under its host key onto its member_id.
+    await migrateRatingKey(domain, ev.memberId, query)
+  } catch (err) {
+    setResponseStatus(event, 503)
+    console.error(`[b24-events] ${ev.event} portal=${hash} REJECTED: database unavailable (${(err as Error).message})`)
+    return { ok: false, error: 'database unavailable' }
+  }
 
   // Refused ⇒ a stale install arriving after a newer uninstall. Answer 200 so Bitrix stops
   // redelivering, but say so — silently discarding a registration is exactly the failure the owner
@@ -156,11 +193,53 @@ export default defineEventHandler(async (event) => {
     console.warn(`[b24-events] ONAPPINSTALL portal=${hash} SKIPPED: stale install after a newer uninstall`)
     return { ok: true, skipped: 'stale-install-after-uninstall' }
   }
-  // Carry any rating state the portal accumulated under its host key onto its member_id.
-  await migrateRatingKey(domain, ev.memberId, query)
   console.info(`[b24-events] ${ev.event} portal=${hash} registered`)
   return { ok: true }
 })
 
 /** Largest event body we will buffer. A real webhook is a couple of KB. */
 const MAX_EVENT_BODY_BYTES = 64 * 1024
+
+/**
+ * Read the request body while counting bytes, refusing past the cap. Returns null when over.
+ *
+ * The Content-Length pre-check stays (it refuses an honest oversized request before any read);
+ * this is the backstop for the dishonest ones — chunked with no declared length, or a declared
+ * length smaller than what is actually sent.
+ */
+async function readBodyCapped(event: Parameters<typeof getRequestWebStream>[0]): Promise<string | null> {
+  const stream = getRequestWebStream(event)
+  if (!stream) {
+    return ''
+  }
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  let over = false
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_EVENT_BODY_BYTES) {
+        // Drain to completion, discarding, instead of cancel(): h3's request stream has no cancel
+        // handler, so cancelling closes the controller while node keeps emitting `data` — every
+        // late chunk then throws "Controller is already closed" inside an EventEmitter callback,
+        // an uncaughtException an unauthenticated caller can trigger at will. Reproduced live with
+        // a slow chunked sender. Draining keeps memory flat (chunks are dropped) and lets the
+        // stream end on its own, so the 413 is actually delivered.
+        over = true
+        chunks.length = 0
+      }
+      if (!over) {
+        chunks.push(value)
+      }
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  if (over) {
+    return null
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}

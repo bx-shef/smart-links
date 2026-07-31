@@ -1,4 +1,21 @@
 @import "tailwindcss";
+
+/*
+ * The Bitrix24 design system is loaded GLOBALLY, including on the public landing, which renders
+ * with `layout: false` and uses no B24* component. Its base layer still reaches that page — the
+ * landing's body background comes from the design system's `--air-theme-background`, visible in
+ * the overscroll area — but the ~240 KB of CSS (about 40 KB gzip, most of it design tokens) buys
+ * the landing essentially nothing.
+ *
+ * Moving this import into the in-portal layouts was tried and reverted: Vite does emit a separate
+ * CSS chunk per layout, but Nuxt does NOT reference it from the prerendered HTML, so every
+ * in-portal page shipped unstyled until its JS loaded the layout chunk — a visible flash inside a
+ * CRM placement or a slider. It also duplicated the same 240 KB into one chunk per layout.
+ *
+ * Splitting this properly needs either a second Nuxt entry for the landing or a build step that
+ * emits and links the design-system stylesheet itself; neither is worth ~37 KB gzip on one page
+ * against the risk of an unstyled in-portal app. Revisit if b24ui gains a tree-shaking option.
+ */
 @import "@bitrix24/b24ui-nuxt";
 
 /*

@@ -95,13 +95,21 @@ export async function updateTokensOnRefresh(
   )
 }
 
-/** Remove a portal and record the uninstall so a late install cannot resurrect it. */
+/**
+ * Remove a portal and record the uninstall so a late install cannot resurrect it.
+ *
+ * The tombstone is written FIRST, before anything is deleted. These are separate statements with no
+ * transaction between them (QueryFn has no transaction support, and the platform can suspend this
+ * process at any point), so the order decides which half-finished state is survivable:
+ *
+ *   tombstone → delete   a crash in between leaves a tombstone and a still-registered portal. The
+ *                        real uninstall is simply retried or the portal reinstalls with a later ts,
+ *                        which passes the guard. Harmless.
+ *   delete → tombstone   a crash in between leaves the portal deleted with NO tombstone — exactly
+ *                        the state the tombstone exists to prevent, so a delayed install would
+ *                        resurrect a portal the customer removed.
+ */
 export async function deletePortal(memberId: string, query: QueryFn, eventTs = 0, domain = ''): Promise<void> {
-  await query('DELETE FROM portal_tokens WHERE member_id=$1', [memberId])
-  // The rating row is per-portal state about a customer who just removed the app — delete it with
-  // everything else rather than keep it against a portal that no longer exists. Both keys, because
-  // a portal seen before it ever registered is keyed by host, and that row is not otherwise swept.
-  await query('DELETE FROM app_rating WHERE portal_key = ANY($1)', [[memberId, domain].filter(Boolean)])
   if (eventTs > 0) {
     await query(
       `INSERT INTO portal_tombstone (member_id, deleted_ts) VALUES ($1,$2)
@@ -109,6 +117,11 @@ export async function deletePortal(memberId: string, query: QueryFn, eventTs = 0
       [memberId, eventTs]
     )
   }
+  await query('DELETE FROM portal_tokens WHERE member_id=$1', [memberId])
+  // The rating row is per-portal state about a customer who just removed the app — delete it with
+  // everything else rather than keep it against a portal that no longer exists. Both keys, because
+  // a portal seen before it ever registered is keyed by host, and that row is not otherwise swept.
+  await query('DELETE FROM app_rating WHERE portal_key = ANY($1)', [[memberId, domain].filter(Boolean)])
 }
 
 /**

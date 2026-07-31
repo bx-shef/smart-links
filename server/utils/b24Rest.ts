@@ -40,12 +40,16 @@ export const B24_ZONES = [
   // bitrix24.tech hosts the OAuth server, not portals.
 ] as const
 
-function allowedZones(env: Record<string, string | undefined> = process.env): string[] {
+export function allowedZones(env: Record<string, string | undefined> = process.env): string[] {
   const extra = (env.B24_EXTRA_ZONES ?? '')
     .split(',')
     .map(s => s.trim().toLowerCase())
-    .filter(Boolean)
-  return [...B24_ZONES, ...extra]
+    // Same character class as the host check. This list is not only matched against hosts — it is
+    // also serialised into the CSP header, where a value with a space or semicolon would become a
+    // directive of its own (`B24_EXTRA_ZONES="x; script-src *"`). A malformed zone can never match
+    // a host anyway, so dropping it loses nothing and keeps the header intact.
+    .filter(zone => /^[a-z0-9.-]+$/.test(zone))
+  return [...new Set([...B24_ZONES, ...extra])]
 }
 
 /** SSRF guard: only allow Bitrix24 cloud hosts (the domain comes from the client frame). */

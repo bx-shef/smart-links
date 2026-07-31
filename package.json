@@ -3,6 +3,9 @@
   "private": true,
   "version": "0.0.0",
   "packageManager": "pnpm@10.17.0",
+  "engines": {
+    "node": ">=22"
+  },
   "type": "module",
   "scripts": {
     "dev": "nuxt dev",
@@ -15,6 +18,7 @@
     "lint:fix": "eslint --fix .",
     "typecheck": "nuxt prepare && vue-tsc --noEmit -p .nuxt/tsconfig.json && vue-tsc --noEmit -p .nuxt/tsconfig.server.json",
     "test": "vitest run",
+    "b24:smoke": "node scripts/b24-smoke.mjs",
     "check": "pnpm lint && pnpm typecheck && pnpm test",
     "translate-ui": "tsx tools/translate.ui.ts",
     "tools:fix-paths": "node ./tools/fix-paths.mjs",
@@ -36,6 +40,7 @@
     "@types/pg": "^8.20.0",
     "archiver": "^7.0.1",
     "consola": "^3.4.2",
+    "dotenv": "^16.4.5",
     "eslint": "^9.34.0",
     "glob": "^10.4.5",
     "openai": "^5.16.0",

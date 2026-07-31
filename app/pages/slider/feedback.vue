@@ -143,5 +143,11 @@ onUnmounted(() => {
 </script>
 
 <template>
-  <div ref="frameContainer" class="bg-white rounded-(--ui-border-radius-md)" />
+  <!--
+    The Bitrix24 form inside the iframe renders on a white sheet of its own, so this backdrop has to
+    stay white to match it. Use the design-system token rather than Tailwind's `bg-white`: the token
+    is the one the rest of the app uses for a deliberately fixed-light surface, so it stays correct
+    if the shell's palette ever changes.
+  -->
+  <div ref="frameContainer" class="bg-(--ui-color-base-white-fixed) rounded-(--ui-border-radius-md)" />
 </template>

@@ -66,7 +66,7 @@ describe('runTokenKeepAlive', () => {
   it('refreshes each portal and stores the ROTATED token, re-encrypted', async () => {
     const db = fakeDb([{ memberId: 'm1', refresh: 'r1' }])
     const r = await runTokenKeepAlive(deps(db))
-    expect(r).toEqual({ considered: 1, refreshed: 1, failed: 0, failedPortals: [] })
+    expect(r).toEqual({ considered: 1, refreshed: 1, failed: 0, failedPortals: [], lostRotations: [] })
 
     const stored = db.store.get('m1')!
     expect(stored.access_token).toBe('access-for-r1')
@@ -100,8 +100,29 @@ describe('runTokenKeepAlive', () => {
     expect(db.store.get('m1')!.access_token).toBe('old')
   })
 
+  it('отделяет потерянную ротацию от обычного сбоя', async () => {
+    // Падение ДО обращения к Bitrix — грант цел, завтра попробуем снова.
+    const before = fakeDb([{ memberId: 'm1', refresh: 'r1' }])
+    const r1 = await runTokenKeepAlive(deps(before, async () => { throw new Error('ECONNRESET') }))
+    expect(r1).toMatchObject({ failed: 1 })
+    expect(r1.lostRotations).toEqual([])
+
+    // Падение ПОСЛЕ успешного рефреша — старый токен уже потрачен, новый не сохранён: портал
+    // потерян безвозвратно, и это должно быть видно отдельно от обычной неудачи.
+    const after = fakeDb([{ memberId: 'm2', refresh: 'r2' }])
+    const failingWrite: typeof after.query = async (text, params) => {
+      if (text.includes('UPDATE portal_tokens')) throw new Error('db gone')
+      return after.query(text, params)
+    }
+    const r2 = await runTokenKeepAlive({ ...deps(after), query: failingWrite })
+    expect(r2).toMatchObject({ refreshed: 0, failed: 1 })
+    expect(r2.lostRotations).toHaveLength(1)
+    expect(r2.lostRotations[0]).toBe(r2.failedPortals[0])
+    expect(r2.lostRotations[0]).not.toContain('m2')
+  })
+
   it('does nothing when no portal is near expiry', async () => {
     const db = fakeDb([])
-    expect(await runTokenKeepAlive(deps(db))).toEqual({ considered: 0, refreshed: 0, failed: 0, failedPortals: [] })
+    expect(await runTokenKeepAlive(deps(db))).toEqual({ considered: 0, refreshed: 0, failed: 0, failedPortals: [], lostRotations: [] })
   })
 })

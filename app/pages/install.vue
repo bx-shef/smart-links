@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import type { ProgressProps } from '@bitrix24/b24ui-nuxt'
 import type { IStep } from '#shared/types/base'
+import { PLACEMENT_MIN_HEIGHT } from '~/utils/placement'
 import type { B24Frame } from '@bitrix24/b24jssdk'
 import { ref, onMounted } from 'vue'
 import { sleepAction } from '~/utils/sleep'
@@ -40,7 +41,6 @@ let $b24: null | B24Frame = null
 
 const confetti = useConfetti()
 
-const isShowDebug = ref(false)
 
 const progressColor = ref<ProgressProps['color']>('air-primary')
 const progressValue = ref<null | number>(null)
@@ -104,7 +104,7 @@ const steps = ref<Record<string, IStep>>({
             TITLE: `[${import.meta.dev ? 'dev' : 'prod'}] SmartLink`,
             DESCRIPTION: ``,
             OPTIONS: {
-              height: 65
+              height: PLACEMENT_MIN_HEIGHT
             }
           }
         }
@@ -121,13 +121,9 @@ const stepCode = ref<string>('init' as const)
 
 // region Actions ////
 async function makeInit(): Promise<void> {
-  if (steps.value.init) {
-    steps.value.init.data = {
-      par11: 'val11',
-      par12: 'val12'
-    }
-  }
-
+  // A short beat so the wizard visibly starts rather than jumping straight to the next step.
+  // (This used to also stuff par11/val11 debug data into the step — donor-template scaffolding a
+  // Market reviewer would have walked past on a production install page.)
   return sleepAction()
 }
 
@@ -141,14 +137,6 @@ async function makeFinish(): Promise<void> {
   await $b24!.installFinish()
 }
 
-const stepsData = computed(() => {
-  return Object.entries(steps.value).map(([index, row]) => {
-    return {
-      step: index,
-      data: row?.data
-    }
-  })
-})
 // endregion ////
 
 // region Lifecycle Hooks ////
@@ -201,9 +189,5 @@ onMounted(async () => {
         {{ steps[stepCode]?.caption || '...' }}
       </ProseP>
     </div>
-
-    <ProsePre v-if="isShowDebug">
-      {{ stepsData }}
-    </ProsePre>
   </div>
 </template>

@@ -32,7 +32,7 @@ usePageSeo()
       }"
     >
       <div v-if="page.isLoading">
-        <div class="relative cursor-wait isolate absolute z-1000 inset-0 w-full flex flex-row flex-nowrap items-center justify-center h-[270x] min-h-[270px]">
+        <div role="status" :aria-label="$t('app.loading')" class="cursor-wait isolate absolute z-1000 inset-0 w-full flex flex-row flex-nowrap items-center justify-center h-[270px] min-h-[270px]">
           <BtnSpinnerIcon
             class="text-base-500 size-[110px] animate-spin-slow"
             aria-hidden="true"

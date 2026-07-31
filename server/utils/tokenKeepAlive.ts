@@ -53,6 +53,12 @@ export interface KeepAliveResult {
   failed: number
   /** Pseudonymous hashes of the portals that failed, so a repeat offender is identifiable in logs. */
   failedPortals: string[]
+  /**
+   * Portals whose grant was rotated at Bitrix but could not be persisted — their access is gone for
+   * good and only a reinstall by the customer restores it. A subset of `failedPortals`, separated
+   * because it needs a different reaction: not "retry tomorrow" but "contact this customer".
+   */
+  lostRotations: string[]
 }
 
 /**
@@ -92,12 +98,18 @@ export async function runTokenKeepAlive(deps: KeepAliveDeps): Promise<KeepAliveR
   const rows = await selectTokensNearExpiry(deps.query)
   let refreshed = 0
   const failedPortals: string[] = []
+  const lostRotations: string[] = []
 
   for (const row of rows) {
+    let rotated = false
     try {
       const plaintext = decryptSecret(row.refreshTokenEnc, deps.encKey)
       const raw = await deps.refresh(buildRefreshParams(deps.clientId, deps.clientSecret, plaintext))
       const parsed = parseTokenResponse(raw)
+      // Past this point Bitrix has ROTATED the grant: the token in the database is now spent, and
+      // only the value in `parsed` can still refresh this portal. A failure from here on is not a
+      // retryable blip — it loses the portal's access permanently.
+      rotated = true
       await updateTokensOnRefresh(
         row.memberId,
         {
@@ -112,9 +124,17 @@ export async function runTokenKeepAlive(deps: KeepAliveDeps): Promise<KeepAliveR
     } catch {
       // A member_id identifies a customer portal and stays out of the log; the hash is enough to
       // tell a portal that fails every day from a different one each time.
-      failedPortals.push(portalHash(row.memberId))
+      const hash = portalHash(row.memberId)
+      failedPortals.push(hash)
+      if (rotated) {
+        // The worst outcome this function has, and it is unrecoverable: Bitrix already rotated the
+        // grant, so the token we still hold is spent, and the replacement never reached the
+        // database. Nothing here can fix it — the customer has to reinstall the app — so the least
+        // we owe is to say which portal, instead of counting it as one anonymous failure among many.
+        lostRotations.push(hash)
+      }
     }
   }
 
-  return { considered: rows.length, refreshed, failed: failedPortals.length, failedPortals }
+  return { considered: rows.length, refreshed, failed: failedPortals.length, failedPortals, lostRotations }
 }

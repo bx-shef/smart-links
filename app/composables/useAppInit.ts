@@ -71,8 +71,6 @@ export const useAppInit = (loggerTitle?: string) => {
 
     // Update stores with received data
     user.initFromBatch({
-      name: data.profileData?.data.name ?? undefined,
-      lastName: data.profileData?.data.lastName ?? undefined,
       isAdmin: data.profileData?.data.isAdmin
     })
 

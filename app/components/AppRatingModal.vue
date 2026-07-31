@@ -43,7 +43,7 @@ function onOpenChange(value: boolean) {
         />
         <B24Button
           rounded
-          color="link"
+          color="air-tertiary-no-accent"
           :label="$t('rating.later')"
           @click.stop="emit('later')"
         />

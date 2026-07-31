@@ -5,6 +5,7 @@ import { runTokenKeepAlive } from '../utils/tokenKeepAlive'
 import { tokenEncryptionReady } from '../utils/secretCrypto'
 import { edgeSecurityEnabled } from '../utils/edgeSecurity'
 import { readIntEnv } from '../utils/envNumber'
+import { checkAppEnv } from '../utils/envCheck'
 import { markMaintenanceRun, shouldRunMaintenance } from '../utils/maintenanceSchedule'
 
 // Periodic upkeep for the OAuth store: sweep expired tombstones and refresh portals whose grant is
@@ -39,20 +40,19 @@ export default defineNitroPlugin((nitroApp) => {
   const keepAliveReady = db && oauthReady && encReady
   const tombstoneDays = readIntEnv(process.env.TOMBSTONE_TTL_DAYS, 30, 1, 365)
 
-  // One line at startup describing the configuration actually in effect. Without it, a deployment
-  // missing a variable looks identical to a healthy one — the app serves every page normally and
-  // only the invisible half (portal registration) is dead.
-  console.info(
-    `[boot] db=${db ? 'on' : 'off'} oauth=${oauthReady ? 'ready' : 'MISSING'} `
-    + `encryption=${encReady ? 'ready' : 'MISSING'} keepalive=${keepAliveReady ? 'on' : 'off'} `
-    + `edgeSecurity=${edgeSecurityEnabled(process.env) ? 'on' : 'off'} tombstoneTtlDays=${tombstoneDays}`
-  )
-  if (db && !oauthReady) {
-    console.warn('[boot] B24_CLIENT_ID/SECRET are not set — the install webhook will REFUSE every registration')
-  }
-  if (db && oauthReady && !encReady) {
-    console.warn('[boot] B24_TOKEN_ENC_KEY is missing or not 32 bytes — the install webhook will REFUSE every registration')
-  }
+  // One line at startup describing the configuration actually in effect, plus anything that will
+  // stop portals from registering. Without it, a deployment missing a variable looks identical to a
+  // healthy one — every page serves normally and only the invisible half is dead.
+  const report = checkAppEnv({
+    dbEnabled: db,
+    encryptionReady: encReady,
+    edgeSecurity: edgeSecurityEnabled(process.env),
+    tombstoneDays,
+    env: process.env
+  })
+  console.info(`[boot] ${report.summary}`)
+  for (const w of report.warnings) console.warn(`[boot] ${w}`)
+  for (const e of report.errors) console.error(`[boot] ${e}`)
 
   if (!db) {
     return
@@ -81,6 +81,12 @@ export default defineNitroPlugin((nitroApp) => {
           // Pseudonymous hash, never the member_id: enough to tell "the same portal fails daily"
           // from "a different one each time" without putting a customer identifier in a log.
           console.warn(`[maintenance] keep-alive failed for portal=${hash}`)
+        }
+        for (const hash of r.lostRotations) {
+          console.error(
+            `[maintenance] portal=${hash} LOST ITS GRANT: the refresh succeeded at Bitrix but could `
+            + 'not be saved. This portal can no longer be refreshed — the customer must reinstall the app.'
+          )
         }
       }
     } catch (err) {

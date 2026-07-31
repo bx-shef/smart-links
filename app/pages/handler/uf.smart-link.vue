@@ -2,12 +2,15 @@
 import type { B24Frame, TypePullMessage } from '@bitrix24/b24jssdk'
 import type { UfSmartLinkType } from '#shared/types/base'
 import { EnumCrmEntityTypeId, Type  } from '@bitrix24/b24jssdk'
-import { ref, onMounted, onUnmounted } from 'vue'
+import { ref, watch, onMounted, onUnmounted } from 'vue'
 import { usePageStore } from '~/stores/page'
 import { useLinkStore } from '~/stores/link'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
 import { sleepAction } from '~/utils/sleep'
+import { resolveIblockTypeId } from '~/utils/listsTarget'
+import { isNumericQuery, mergeSearchRows } from '~/utils/listsSearch'
+import { PLACEMENT_MIN_HEIGHT } from '~/utils/placement'
 import DeleteHyperlinkIcon from '@bitrix24/b24icons-vue/main/DeleteHyperlinkIcon'
 import DocumentPlusIcon from '@bitrix24/b24icons-vue/main/DocumentPlusIcon'
 import RefreshIcon from '@bitrix24/b24icons-vue/outline/RefreshIcon'
@@ -33,6 +36,22 @@ const { init: initB24Frame } = useB24()
 let $b24: null | B24Frame = null
 const isSetUfSettings = ref(true)
 const isEditMode = ref(false)
+/**
+ * Message for a failed action (search / link / unlink), shown inside the placement.
+ *
+ * These are recoverable: the card is fine, the field is configured, one REST call did not go
+ * through. Routing them to `processErrorGlobal` replaced the whole placement — a 65 px window
+ * inside someone's CRM card — with the full-screen error page, so a hiccup in the search looked
+ * like the app had died and took the linked record's controls away with it. Only a failure that
+ * leaves nothing to show (no frame, no settings) belongs on the error page.
+ */
+const actionError = ref('')
+
+/** Log the real error for support and show the user what to do about it. */
+function reportActionError(error: unknown, messageKey: string) {
+  $logger.error(error)
+  actionError.value = t(messageKey)
+}
 
 /**
  * UF field code of the current placement
@@ -49,6 +68,10 @@ const ufDestinationCode = ref('')
  * Candidate list to pick a target from
  */
 const listEntity = ref<EntityItem[]>([])
+/** True when the last search filled a whole REST page — i.e. the portal has more than we show. */
+const listTruncated = ref(false)
+/** Bitrix24 REST list methods return at most this many rows per call. */
+const REST_PAGE_SIZE = 50
 
 const filterTitle = ref('')
 const filterFromOrigin = ref<Record<string, undefined | number>>({
@@ -60,7 +83,40 @@ const filterFromOrigin = ref<Record<string, undefined | number>>({
 // endregion ////
 
 // region Init Data ////
-async function loadData(
+/**
+ * Refresh the placement from the portal, reporting its own failures.
+ *
+ * The guard is the point. This runs at the end of every write, and it issues REST calls of its
+ * own — so without a catch here a failed refresh surfaced as the WRITE's error message: the field
+ * had in fact been changed, while the alert said the card was untouched and told the user to press
+ * a control that the already-updated view no longer rendered.
+ */
+async function loadData(isFixLoadPage: boolean = true): Promise<void> {
+  try {
+    await loadDataFromPortal(isFixLoadPage)
+  } catch (error) {
+    reportActionError(error, 'uf.smart-link.error.load')
+  }
+}
+
+/**
+ * Refresh after a successful write, keeping the spinner up for the whole round trip.
+ *
+ * The spinner has to be managed here rather than left to the write's own `finally`: the refresh
+ * now runs outside it, and `loadData` only raises the spinner on the branches that reach
+ * `preLoadData`, so the branch where the link resolves would otherwise refresh with no indication
+ * that anything is happening.
+ */
+async function refreshAfterWrite(): Promise<void> {
+  page.isLoading = true
+  try {
+    await loadData()
+  } finally {
+    page.isLoading = false
+  }
+}
+
+async function loadDataFromPortal(
   isFixLoadPage: boolean = true
 ) {
   if (!$b24) {
@@ -166,7 +222,7 @@ async function loadData(
       const responseTargetEntity = await $b24.callMethod(
         'lists.element.get',
         {
-          IBLOCK_TYPE_ID: configUfSetting.value.target.entityMode,
+          IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value.target),
           IBLOCK_ID: configUfSetting.value.target.entityTypeId,
           SELECT: [
             'ID',
@@ -208,9 +264,8 @@ async function loadData(
     }
   }
 
-  if (isFixLoadPage) {
-    await resizeWindow()
-  }
+  // Resizing is the watcher's job. Doing it here measured the loading spinner, because every
+  // caller that passes `isFixLoadPage` is holding `page.isLoading` true across this call.
 }
 
 /**
@@ -223,6 +278,7 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
   if (!$b24) {
     return
   }
+  actionError.value = ''
   if (isFixLoadPage) {
     page.isLoading = true
   }
@@ -242,21 +298,27 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
         filter[configUfSetting.value.target.clientFields.contactId] = filterFromOrigin.value.contactId
       }
 
-      if (filterTitle.value.length > 0) {
+      // Trimmed, like the Lists branch: a copy-pasted " 12 " should mean the record number, and a
+      // whitespace-only query should mean "no query", in both target modes alike.
+      const crmQuery = filterTitle.value.trim()
+      if (crmQuery.length > 0) {
         filter[0] = {
           'logic': 'OR',
           '0': {
-            '=id': filterTitle.value
+            '=id': crmQuery
           },
           '1': {
-            '%=title': `%${filterTitle.value}%`
+            '%=title': `%${crmQuery}%`
           }
         }
       }
 
 
       const params = {
-        entityTypeId: link.entityTypeId,
+        // From the config, not the link store: the two are only equal because every load copies
+        // config -> link, and mixing sources is how a section from one config pairs with the id of
+        // another. One source of truth for what we query.
+        entityTypeId: configUfSetting.value.target.entityTypeId,
         select: [
           'id',
           'title'
@@ -273,6 +335,9 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
       )
 
       listEntity.value = (response.getData().result.items || []) as EntityItem[]
+      // REST pages at 50 and this is a single call: a full page means "there is more", and
+      // without saying so an unfiltered portal with 200 deals reads as a portal with 50.
+      listTruncated.value = listEntity.value.length >= REST_PAGE_SIZE
     } else if (configUfSetting.value.target.entityMode === 'lists') {
       const filter = Object.assign(
         {},
@@ -286,82 +351,33 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
         filter[configUfSetting.value.target.clientFields.contactId] = `C_${filterFromOrigin.value.contactId}`
       }
 
-      const listResult: EntityItem[] = []
-
-      // First pass: filter by ID (Lists has no OR support)
-      if (filterTitle.value.length > 0) {
-        filter['ID'] = filterTitle.value
-      }
-
-      const params = {
-        IBLOCK_TYPE_ID: configUfSetting.value.target.entityMode,
-        IBLOCK_ID: link.entityTypeId,
-        SELECT: [
-          'ID',
-          'NAME'
-        ],
-        FILTER: filter,
-        ELEMENT_ORDER: {
-          SORT: 'desc',
-          ID: 'desc',
-        }
-      }
-
-      const response = await $b24.callMethod(
-        'lists.element.get',
-        params
-      )
-
-      const someData = response.getData().result || []
-      someData.forEach((row: any) => {
-        listResult.push({
-          id: row['ID'],
-          title: row['NAME'],
-        } as EntityItem)
-      })
-
-      // Second pass: filter by title
-      if (filterTitle.value.length > 0) {
-        filter['ID'] = undefined
-        filter['%NAME'] = filterTitle.value
-
-        const params = {
-          IBLOCK_TYPE_ID: configUfSetting.value.target.entityMode,
-          IBLOCK_ID: link.entityTypeId,
-          SELECT: [
-            'ID',
-            'NAME'
-          ],
-          FILTER: filter,
+      // Two passes because the Lists filter has no OR: by exact ID (only when the query can BE an
+      // id — a word there is a wasted call), then by %NAME. Merge and dedup live in a tested util:
+      // an element whose name contains its own number used to match both passes and render twice,
+      // duplicate v-for key included.
+      const query = filterTitle.value.trim()
+      const listCall = async (extra: Record<string, unknown>) => {
+        const response = await $b24!.callMethod('lists.element.get', {
+          IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value!.target),
+          IBLOCK_ID: configUfSetting.value!.target.entityTypeId,
+          SELECT: ['ID', 'NAME'],
+          FILTER: { ...filter, ...extra },
           ELEMENT_ORDER: {
             SORT: 'desc',
             ID: 'desc',
           }
-        }
-
-        const response = await $b24.callMethod(
-          'lists.element.get',
-          params
-        )
-
-        const someData = response.getData().result || []
-        someData.forEach((row: any) => {
-          listResult.push({
-            id: row['ID'],
-            title: row['NAME'],
-          } as EntityItem)
         })
+        return (response.getData().result || []) as Array<{ ID?: unknown, NAME?: unknown }>
       }
 
-      listEntity.value = listResult
-    }
+      const byId = query && isNumericQuery(query) ? await listCall({ ID: query }) : []
+      const byName = query ? await listCall({ '%NAME': query }) : await listCall({})
 
+      listEntity.value = mergeSearchRows(byId, byName)
+      listTruncated.value = byName.length >= REST_PAGE_SIZE
+    }
   } catch (error) {
-    processErrorGlobal(error, {
-      homePageIsHide: true,
-      isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link'
-    })
+    reportActionError(error, 'uf.smart-link.error.load')
   } finally {
     if (isFixLoadPage) {
       await sleepAction(1000)
@@ -372,6 +388,48 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
 // endregion ////
 
 // region Actions ////
+/**
+ * Open a portal path: the slider for CRM targets, a new tab for Lists targets.
+ *
+ * The split looks arbitrary and is not. Routing Lists through the slider was tried and reverted
+ * after reading the SDK: `slider.openPath` prefixes the path with `/crm/company/requisite/0/../../../..`
+ * before sending it, so a Lists URL passes the portal's prefix check by traversal rather than by
+ * being supported — the refusal a "try the slider, fall back on error" scheme depends on would
+ * likely never arrive. Two further reasons a fallback cannot carry that weight: `openPath` settles
+ * from the parent frame's reply, so a `window.open` in its catch runs with no user activation and
+ * the browser blocks it; and `openPath` arms no timeout, so an unanswered command hangs the caller
+ * forever where the old `window.closed` poll could not.
+ *
+ * Whether the portal slider actually renders a Lists element page needs a live check on a portal
+ * with a Lists target. Until then this keeps the behaviour that is known to work.
+ */
+function isListsTarget(): boolean {
+  return link.entityMode === 'lists'
+}
+
+/**
+ * Poll handle for the "create a Lists element" tab.
+ *
+ * Held at this level so it can be cleared on unmount: a CRM card can be closed while the tab is
+ * still open, and an interval left running keeps a closure over the whole page alive and fires a
+ * refresh into a placement that no longer exists.
+ */
+let newEntityTimer: ReturnType<typeof setInterval> | null = null
+
+function clearNewEntityWatch() {
+  if (newEntityTimer !== null) {
+    clearInterval(newEntityTimer)
+    newEntityTimer = null
+  }
+}
+
+async function openInPortal(path: URL): Promise<void> {
+  if (!$b24) {
+    return
+  }
+  await $b24.slider.openPath(path, 950)
+}
+
 async function makeOpenLink() {
   if (!$b24) {
     return
@@ -379,14 +437,14 @@ async function makeOpenLink() {
 
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', link.id.toString())
   const path = $b24.slider.getUrl(url)
-  if (link.entityMode === 'lists') {
+
+  if (isListsTarget()) {
+    // Synchronous, inside the click handler: this is the only place the browser still counts the
+    // user gesture, and a `window.open` deferred behind an await is blocked as a popup.
     window.open(path, '_blank')
     return
   }
-  await $b24?.slider.openPath(
-    path,
-    950
-  )
+  await openInPortal(path)
 }
 
 /**
@@ -397,8 +455,9 @@ async function addNewEntity() {
     return
   }
 
-  const url = appSettings.getNewTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', '0')
-  const path = $b24.slider.getUrl(url)
+  // No '#entityId#' replace here: getNewTargetPath returns a complete creation path with no
+  // marker — only getTargetPath carries one.
+  const path = $b24.slider.getUrl(appSettings.getNewTargetPath(link.entityTypeId, link.entityMode))
   /**
    * @todo write proper param substitution / prefill here
    */
@@ -424,22 +483,29 @@ async function addNewEntity() {
       shSmartLink_ENTITY_TYPE_ID: `${currentEntityTypeId.value}`,
     }).toString()
 
-    const myWindow = window.open(`${path.toString()}?${query}` , '_blank')
-    const timer = setInterval(async () => {
-      if (myWindow && myWindow.closed) {
-        clearInterval(timer)
-
-        await loadData()
+    // Opened synchronously (see openInPortal): a Lists page is not something the slider is known
+    // to render, and deferring the open past an await loses the user gesture.
+    const created = window.open(`${path.toString()}?${query}`, '_blank')
+    // Poll for the tab closing so the list picks up whatever was just created. `created` is null
+    // when the browser blocked the popup — refresh once instead of polling a window that does not
+    // exist, otherwise the interval never clears.
+    if (!created) {
+      await refreshAfterWrite()
+      return
+    }
+    clearNewEntityWatch()
+    newEntityTimer = setInterval(async () => {
+      if (created.closed) {
+        clearNewEntityWatch()
+        await refreshAfterWrite()
       }
     }, 500)
-
     return
   }
 
-  await $b24?.slider.openPath(
-    path,
-    950
-  )
+  await openInPortal(path)
+  // openPath resolves when the slider closes, so the new record is already there to be found.
+  await refreshAfterWrite()
 }
 
 async function makeOpenLinkById(entity: EntityItem) {
@@ -450,14 +516,11 @@ async function makeOpenLinkById(entity: EntityItem) {
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', entity.id.toString())
   const path = $b24.slider.getUrl(url)
 
-  if (link.entityMode === 'lists') {
+  if (isListsTarget()) {
     window.open(path, '_blank')
     return
   }
-  await $b24?.slider.openPath(
-    path,
-    950
-  )
+  await openInPortal(path)
 }
 
 async function makeAddLink(entity: EntityItem) {
@@ -478,6 +541,12 @@ async function makeAddLink(entity: EntityItem) {
     return
   }
 
+  actionError.value = ''
+  let written = false
+
+  // Only the write belongs in here. The refresh that follows it must not be able to report itself
+  // as a failed link — by the time it runs the card HAS been updated, and the message for a failed
+  // link says the opposite.
   try {
     page.isLoading = true
 
@@ -499,15 +568,15 @@ async function makeAddLink(entity: EntityItem) {
       id: entity.id,
       title: entity.title,
     })
-    await loadData()
+    written = true
   } catch (error) {
-    processErrorGlobal(error, {
-      homePageIsHide: true,
-      isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link'
-    })
+    reportActionError(error, 'uf.smart-link.error.link')
   } finally {
     page.isLoading = false
+  }
+
+  if (written) {
+    await refreshAfterWrite()
   }
 }
 
@@ -529,6 +598,11 @@ async function makeUnLink() {
     return
   }
 
+  actionError.value = ''
+  let written = false
+
+  // Same split as makeAddLink: the refresh runs after the link is already gone, so it cannot be
+  // allowed to claim the unlink failed.
   try {
     page.isLoading = true
 
@@ -545,15 +619,15 @@ async function makeUnLink() {
     )
 
     link.makeEmpty(configUfSetting.value.target.entityTypeId, configUfSetting.value.target.entityMode)
-    await loadData()
+    written = true
   } catch (error) {
-    processErrorGlobal(error, {
-      homePageIsHide: true,
-      isShowClearError: true,
-      clearErrorHref: '/handler/uf.smart-link'
-    })
+    reportActionError(error, 'uf.smart-link.error.unlink')
   } finally {
     page.isLoading = false
+  }
+
+  if (written) {
+    await refreshAfterWrite()
   }
 }
 
@@ -561,6 +635,10 @@ function openSliderAppSettings() {
   $b24?.slider.openSliderAppPage({
     place: 'app-options',
     ufCode: ufCode.value,
+    // The settings slider needs to know which entity this field lives on, otherwise it cannot
+    // offer the entity's own fields to pick from and the admin is back to typing UF_CRM_ codes by
+    // hand. Only the placement knows it — the slider has no other way to find out.
+    sourceEntityTypeId: `${currentEntityTypeId.value}`,
     bx24_width: 650,
     bx24_title: t('page.app-options.seo.title'),
   })
@@ -569,24 +647,57 @@ function openSliderAppSettings() {
 const makeSendPullCommandHandler = async (message: TypePullMessage) => {
   if (message.command === 'reload.options') {
     $logger.warn("Get pull command for update. Reinit the application")
+    actionError.value = ''
+    // The try/finally is not optional here. The SDK invokes pull callbacks fire-and-forget, so a
+    // rejection anywhere in this chain is an unhandled promise rejection: the line clearing the
+    // spinner never runs, and the layout hides the whole placement behind it until the CRM card is
+    // reloaded. An admin saving settings would spin every open card in the portal.
     page.isLoading = true
-    await reloadData()
-    await loadData()
-    page.isLoading = false
+    try {
+      await reloadData()
+      await loadData()
+    } catch (error) {
+      reportActionError(error, 'uf.smart-link.error.load')
+    } finally {
+      page.isLoading = false
+    }
   }
 }
 // endregion ////
 
 // region Tools ////
+// Re-measure whenever what is on screen changes size — the alert appearing, the view flipping
+// between the candidate list and the linked row, the list filling in.
+//
+// The `page.isLoading` guard is the important part: the layout replaces the entire page body with
+// a fixed-height spinner while loading, so a measurement taken then sizes the placement to the
+// SPINNER. Every resize in this file used to run inside a loading window, which meant a card with
+// a linked record (a 65 px row) permanently asked the portal for the spinner's ~270 px.
+watch(
+  () => [page.isLoading, actionError.value, link.isEmpty, listEntity.value.length] as const,
+  async ([isLoading]) => {
+    if (isLoading) {
+      return
+    }
+    await resizeWindow()
+  },
+  { flush: 'post' }
+)
+
 async function resizeWindow() {
-  await $b24?.parent.resizeWindow(
-    340,
-    isEditMode.value
-      ? 260
-      : link.isEmpty
-        ? 270
-        : 85
-  )
+  // Size to the actual content rather than to hardcoded numbers. The height used to be a
+  // three-way guess (260 / 270 / 85) that went wrong as soon as a record title wrapped.
+  //
+  // Swallow the failure deliberately. resizeWindowAuto measures the body and the SDK REJECTS a
+  // resize whose measured width or height is zero — which is exactly what a placement laid out in
+  // a hidden card tab measures. That rejection used to reach onMounted's catch and replace the
+  // whole placement with the full-screen error page: a cosmetic call taking down the feature. A
+  // placement at the portal's default size is a far better outcome than no placement.
+  try {
+    await $b24?.parent.resizeWindowAuto(undefined, PLACEMENT_MIN_HEIGHT)
+  } catch (error) {
+    $logger.warn('resizeWindowAuto refused the measured size', error)
+  }
 }
 // endregion ////
 
@@ -608,13 +719,11 @@ onMounted(async () => {
     currentEntityTypeId.value = Number.parseInt($b24.placement.options['ENTITY_DATA']['entityTypeId'])
     currentEntityId.value = Number.parseInt($b24.placement.options['ENTITY_DATA']['entityId'])
 
-    if (isEditMode.value) {
-      useHead({
-        bodyAttrs: {
-          class: `light light:[--air-theme-bg-color:#ffffff]`
-        }
-      })
-    }
+    // The white backdrop for edit mode is a class on the wrapper below, not a `useHead` call here.
+    // unhead MERGES `bodyAttrs.class` as a set union rather than replacing it, so pushing a second
+    // `light:[--air-theme-bg-color:…]` from the page left the body carrying both that value and the
+    // layout's, at identical specificity (`:where()` contributes none) — which of the two won came
+    // down to their byte order in the compiled stylesheet.
     usePullClient()
     useSubscribePullClient(
       makeSendPullCommandHandler.bind( this ),
@@ -622,7 +731,9 @@ onMounted(async () => {
     )
     startPullClient()
     await loadData(false)
-    await resizeWindow()
+    // No resize here: `page.isLoading` is still true until the finally below, so a measurement
+    // taken now would size the placement to the loading spinner. The watcher above fires on the
+    // transition to false, once the real content is on screen.
   } catch (error) {
     processErrorGlobal(error, {
       homePageIsHide: true,
@@ -635,6 +746,7 @@ onMounted(async () => {
 })
 
 onUnmounted(() => {
+  clearNewEntityWatch()
   if (b24Helper.value) {
     destroyB24Helper()
   }
@@ -644,7 +756,14 @@ onUnmounted(() => {
 
 <template>
   <div>
-    <div v-if="isEditMode" class="flex flex-col items-center justify-center h-screen">
+    <!--
+      `py-4` rather than `h-screen` on these two advice states. `h-screen` is 100vh, which inside
+      the placement iframe IS the height we are asking the portal for — so auto-measuring the body
+      returned the height it already had, a fixed point the content could never grow out of. With
+      the wrapper sized by its content the measurement means something, and an advice too tall for
+      the current frame can actually ask for more room instead of being clipped.
+    -->
+    <div v-if="isEditMode" class="flex flex-col items-center justify-center py-4 bg-(--ui-color-base-white-fixed)">
       <B24Advice
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"
@@ -656,7 +775,7 @@ onUnmounted(() => {
         <ProseP small>{{ $t('uf.smart-link.error.edit-mode.line2') }}</ProseP>
       </B24Advice>
     </div>
-    <div v-else-if="!isSetUfSettings" class="flex flex-col items-center justify-center h-screen">
+    <div v-else-if="!isSetUfSettings" class="flex flex-col items-center justify-center py-4">
       <B24Advice
         angle="top"
         class="mt-[4px] w-full max-w-[550px]"
@@ -677,10 +796,17 @@ onUnmounted(() => {
     </div>
     <template v-else>
       <div class="relative overflow-hidden">
+        <B24Alert
+          v-if="actionError"
+          class="mb-[4px]"
+          size="sm"
+          color="air-primary-alert"
+          :description="actionError"
+        />
         <div v-if="link.isEmpty" class="h-[245px]">
           <B24TableWrapper
             size="xs"
-            class="overflow-x-auto w-full h-[235px] bg-white"
+            class="overflow-x-auto w-full h-[235px] bg-(--ui-color-base-white-fixed)"
             pin-rows
             :row-hover="listEntity.length > 0"
             bordered
@@ -693,7 +819,7 @@ onUnmounted(() => {
             </colgroup>
             <thead>
               <tr>
-                <th colspan="3">
+                <th colspan="2">
                   <B24ButtonGroup size="xs">
                     <B24Button
                       :icon="DocumentPlusIcon"
@@ -732,12 +858,31 @@ onUnmounted(() => {
                   />
                 </td>
               </tr>
+              <tr v-if="listTruncated">
+                <td colspan="2">
+                  <B24Alert
+                    class="mt-[4px]"
+                    size="sm"
+                    color="air-secondary"
+                    :description="$t('uf.smart-link.list.truncated')"
+                  />
+                </td>
+              </tr>
               <template
                 v-for="(entity) in listEntity"
                 :key="entity.id"
               >
               <tr>
-                <td><B24Link is-action @click="makeOpenLinkById(entity)">{{ entity.id }}</B24Link></td>
+                <!-- The number and the title do DIFFERENT things (open vs link), and a bare "12"
+                     does not say which — the aria-label carries the verb the eye infers from
+                     column position. -->
+                <td>
+                  <B24Link
+                    is-action
+                    :aria-label="`${$t('uf.smart-link.list.openAria')} ${entity.id}`"
+                    @click="makeOpenLinkById(entity)"
+                  >{{ entity.id }}</B24Link>
+                </td>
                 <td><B24Link is-action @click="makeAddLink(entity)">{{ entity.title }}</B24Link></td>
               </tr>
               </template>
@@ -749,7 +894,7 @@ onUnmounted(() => {
           <div class="flex flex-col gap-[4px]">
             <B24Link
               is-action
-              class="text-[16px] w-[250px] truncate"
+              class="text-[16px] w-full min-w-0 truncate"
               @click="makeOpenLink"
             >
               {{ link.title }}
