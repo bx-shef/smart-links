@@ -30,10 +30,11 @@ export default defineEventHandler(async (event) => {
   }
   const verified = await verifyFrameToken(auth)
   if (!verified.ok || !verified.host) {
-    // The status distinguishes "rejected" from "upstream unavailable"; `verified.reason` stays out
-    // of the body so an unauthenticated caller can't use us as an oracle for whether a given token
-    // is live on a given portal — our own IP makes those probes, not theirs.
-    setResponseStatus(event, verified.status ?? 401)
+    // One status for every verification failure. The body already hides `verified.reason`, but a
+    // 401-vs-502 split still let an outside caller tell "that bitrix24 host exists and rejected
+    // the token" from "no such host" — with our server doing the probing. The legitimate caller
+    // (our own frame client) treats any failure the same way, so the distinction bought nothing.
+    setResponseStatus(event, 401)
     return { error: 'authorization failed' }
   }
 

@@ -47,8 +47,13 @@ CRM-сущности требуют расширения резолверов.
 - `public/` — статика (аватары советника, favicon, robots).
 - `tools/` — оффлайн-инструменты: перевод локалей и упаковка архива для B24.
 - `template/` — HTML-шаблон загрузчика dev-сервера.
-- `server/` — Nitro: `api/` (`health`, `app-rating` get/post), `utils/` (верификация фрейм-токена,
-  политика и хранилище рейтинга), `db/` (`pg`-пул, схема `app_rating`), `plugins/migrate.ts`.
+- `scripts/b24-smoke.mjs` — живая сверка REST-фактов с порталом (см. CLAUDE.md).
+- `server/` — Nitro: `api/` (`health`, `app-rating` get/post, `b24/events` — вебхук
+  install/uninstall), `utils/` (фрейм-токен, SSRF-гард, политика и store рейтинга, OAuth-хранилище
+  токенов + шифрование AES-256-GCM, keep-alive, edge-защита, пер-IP лимит), `db/` (`pg`-пул, схемы
+  `app_rating`/`portal_tokens`/`portal_tombstone`), `middleware/edgeSecurity.ts`,
+  `plugins/` (`migrate`, `edgeHeaders`, `maintenance`). Подробно — `docs/SERVER_MIGRATION.md` и
+  `docs/DATA_POLICY.md`.
 
 ## Страницы и роли
 
@@ -59,8 +64,9 @@ CRM-сущности требуют расширения резолверов.
 | Страница | Плейсмент/место | Что делает |
 |---|---|---|
 | `pages/index.vue` (`/`) | публичный лендинг (вне портала) | Маркетинговая страница: что делает приложение, как работает, издатель. |
+| `pages/privacy.vue` (`/privacy`) | публичная (вне портала) | Политика конфиденциальности — постоянный URL для карточки Маркета. Вторая публичная страница в `isPublicRoute`. |
 | `pages/app.vue` (`/app`) | стартовая (левое меню портала) | Приветствие + кнопка открыть список UF-полей для Сделок. |
-| `pages/install.vue` (`/install`) | установка | Мастер установки: шаги `init → demo → userFields → finish`. На шаге `userFields` регистрирует тип поля (`userfieldtype.delete` + `userfieldtype.add`), на `finish` — `installFinish()` c конфетти. |
+| `pages/install.vue` (`/install`) | установка | Мастер установки: шаги `init → demo → events → userFields → finish`. `events` подписывает вебхук на ONAPPINSTALL/ONAPPUNINSTALL/ONAPPUPDATE, `userFields` регистрирует тип поля, `finish` — `installFinish()` с конфетти. |
 | `pages/handler/uf.smart-link.vue` | обработчик UF-типа (в карточке) | Главная логика поля: читает конфиг, грузит источник и цель, показывает ссылку/подбор, выполняет действия. |
 | `pages/slider/app-options.vue` | слайдер настроек приложения | Редактор настроек поля (**только админ**). Сохраняет `app.option.set` и рассылает pull. |
 | `pages/slider/feedback.vue` | слайдер обратной связи | Встраивает CRM-форму Bitrix24 в iframe, прокидывает свойства портала. |
@@ -71,11 +77,16 @@ CRM-сущности требуют расширения резолверов.
 
 1. `init` — подготовка.
 2. `demo` — заглушка примеров.
-3. `userFields` — регистрирует тип поля: `userfieldtype.add` с
+3. `events` — **подписка на события установки**: `event.get` + план `buildEventBindCalls`
+   (`app/utils/b24EventBind.ts`) навешивает `ONAPPINSTALL`/`ONAPPUNINSTALL`/`ONAPPUPDATE` на наш
+   вебхук `/api/b24/events`. Идемпотентно: корректная подписка не трогается, устаревшая (со старого
+   домена) перенавешивается. **Критичный шаг**: без него событие удаления не придёт вовсе, и креды
+   клиента останутся у издателя навсегда (см. `docs/DATA_POLICY.md`).
+4. `userFields` — регистрирует тип поля: `userfieldtype.add` с
    `USER_TYPE_ID = type_smart_link_<dev|prod>`, `HANDLER = <appUrl>handler/uf.smart-link`,
    `TITLE = [dev|prod] SmartLink`, `OPTIONS.height = 65`. Перед добавлением — `userfieldtype.delete`
    (идемпотентность). `appUrl` вычисляется из текущего URL страницы установки.
-4. `finish` — прогресс 100%, конфетти, `installFinish()`.
+5. `finish` — прогресс 100%, конфетти, `installFinish()`.
 
 После установки администратор в интерфейсе Bitrix24 создаёт UF-поле типа `SmartLink` на
 нужной сущности и настраивает его (см. «Настройки поля»).
@@ -93,7 +104,7 @@ CRM-сущности требуют расширения резолверов.
 Алгоритм `loadData()`:
 
 1. Берёт конфиг поля `configUfSetting = appSettings.configUfListSettings[ufCode]`. Нет
-   конфига → показывает «Необходимо настроить поле» (админу — кнопка в настройки).
+   конфига → показывает «Поле ещё не настроено» (админу — кнопка в настройки).
 2. Читает **исходную** сущность (`crm.item.list` по `entityId`), достаёт значение
    поля-приёмника (`ufDestination`) и клиентские поля (companyId/contactId) для фильтров.
 3. Если приёмник пуст → режим **подбора**: `preLoadData()` грузит список кандидатов из
@@ -101,7 +112,7 @@ CRM-сущности требуют расширения резолверов.
    учётом `customFilter` и фильтров по компании/контакту источника, плюс поиск по
    `filterTitle` (ID или `%title%`).
 4. Если приёмник заполнен → грузит **целевую** сущность и показывает готовую ссылку
-   (название + ID). Если цель не находится (удалена/нет прав) — показывает `????`.
+   (название + ID). Если цель не находится (удалена/нет прав) — показывает «Связанная запись удалена или закрыта правами доступа».
 
 Действия пользователя:
 

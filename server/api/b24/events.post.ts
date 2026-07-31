@@ -38,7 +38,16 @@ export default defineEventHandler(async (event) => {
     return { ok: false, error: 'payload too large' }
   }
 
-  const body = (await readRawBody(event, 'utf8')) || ''
+  // The header check alone is not a cap. A chunked request carries no Content-Length, so
+  // `Number('')` is 0, the check above passes, and `readRawBody` would buffer the entire body —
+  // the exact memory spike this block claims to prevent, reachable while APP_EDGE_SECURITY (whose
+  // middleware rejects chunked-without-length) is off, which is the default. Meter the stream.
+  const body = await readBodyCapped(event)
+  if (body === null) {
+    setResponseStatus(event, 413)
+    console.info('[b24-events] REJECTED: body over cap (chunked or mis-declared length)')
+    return { ok: false, error: 'payload too large' }
+  }
   const ev = extractEvent(parseBracketForm(body))
   const hash = portalHash(ev.memberId)
   const ts = clampEventTs(ev.ts)
@@ -189,3 +198,35 @@ export default defineEventHandler(async (event) => {
 
 /** Largest event body we will buffer. A real webhook is a couple of KB. */
 const MAX_EVENT_BODY_BYTES = 64 * 1024
+
+/**
+ * Read the request body while counting bytes, refusing past the cap. Returns null when over.
+ *
+ * The Content-Length pre-check stays (it refuses an honest oversized request before any read);
+ * this is the backstop for the dishonest ones — chunked with no declared length, or a declared
+ * length smaller than what is actually sent.
+ */
+async function readBodyCapped(event: Parameters<typeof getRequestWebStream>[0]): Promise<string | null> {
+  const stream = getRequestWebStream(event)
+  if (!stream) {
+    return ''
+  }
+  const reader = stream.getReader()
+  const chunks: Uint8Array[] = []
+  let size = 0
+  try {
+    for (;;) {
+      const { done, value } = await reader.read()
+      if (done) break
+      size += value.byteLength
+      if (size > MAX_EVENT_BODY_BYTES) {
+        await reader.cancel().catch(() => {})
+        return null
+      }
+      chunks.push(value)
+    }
+  } finally {
+    reader.releaseLock()
+  }
+  return Buffer.concat(chunks).toString('utf8')
+}
