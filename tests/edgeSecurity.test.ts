@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   EDGE_MAX_BODY_BYTES,
   buildSecurityHeaders,
@@ -131,3 +131,24 @@ describe('edgeBodyGuard', () => {
     expect(edgeBodyGuard('abc', undefined, EDGE_MAX_BODY_BYTES)).toBeNull()
   })
 })
+
+describe('CSP берёт зоны из того же списка, что SSRF-гард', () => {
+  it('зона из B24_EXTRA_ZONES попадает в frame-ancestors', async () => {
+    // The regression this guards: the CSP was once derived from the STATIC zone list only, so a
+    // portal in an env-added zone passed server-side verification while the browser blocked the
+    // iframe on a frame-ancestors that had never heard of the zone. Fresh module import, because
+    // the host list is memoised per process.
+    vi.stubEnv('B24_EXTRA_ZONES', 'bitrix24.test')
+    vi.resetModules()
+    try {
+      const mod = await import('~~/server/utils/edgeSecurity')
+      const csp = mod.contentSecurityPolicy('/handler/uf.smart-link')
+      expect(csp).toContain('https://*.bitrix24.test')
+      expect(csp).toContain('https://*.bitrix24.by')
+    } finally {
+      vi.unstubAllEnvs()
+      vi.resetModules()
+    }
+  })
+})
+

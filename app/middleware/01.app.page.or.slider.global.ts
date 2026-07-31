@@ -8,10 +8,11 @@ import { useB24 } from '~/composables/useB24'
 
 const baseDir = '/'
 
+// Exactly the tested public-route list, nothing more. This used to also skip `/eula` and
+// `/render` — donor-template routes that do not exist here, quietly widening the "no frame on
+// this page" set past what routes.ts declares and tests.
 function isSkipB24(toPath: string): boolean {
   return isPublicRoute(toPath)
-    || toPath.includes(`${baseDir}eula`)
-    || toPath.includes(`${baseDir}render`)
 }
 
 export default defineNuxtRouteMiddleware(async (

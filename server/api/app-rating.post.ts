@@ -51,10 +51,18 @@ export default defineEventHandler(async (event) => {
     setResponseStatus(event, 503)
     return { error: 'portal key unavailable' }
   }
-  if (action === 'prompted') {
-    await markPrompted(portalKey, query)
-  } else {
-    await markOpened(portalKey, query)
+  // Same discipline as the events webhook: a Postgres hiccup answers OUR error shape with a 503,
+  // not Nitro's default 500 — this route's failures are non-fatal to the client by design.
+  try {
+    if (action === 'prompted') {
+      await markPrompted(portalKey, query)
+    } else {
+      await markOpened(portalKey, query)
+    }
+  } catch (err) {
+    console.error('[app-rating] write failed:', (err as Error).message)
+    setResponseStatus(event, 503)
+    return { error: 'storage unavailable' }
   }
   return { ok: true }
 })

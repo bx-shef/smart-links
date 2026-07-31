@@ -6,30 +6,26 @@ export const useUserStore = defineStore(
   'user',
   () => {
     // region State ////
-    const login = ref('')
     const isAdmin = ref(false)
     // endregion ////
 
     // region Actions ////
     /**
-     * Initialize store from batch response data
+     * Initialize store from batch response data.
+     *
+     * Only `isAdmin` is kept: a display name was also stored here for years and rendered nowhere —
+     * the feedback form takes it straight from the SDK helper, so the copy was dead state.
      * @param data - Raw data from Bitrix24 API
-     * @param data.name
-     * @param data.lastName
      * @param data.isAdmin
      */
     function initFromBatch(data: {
-      name?: string
-      lastName?: string
       isAdmin?: boolean
     }) {
-      login.value = [data?.name, data?.lastName].filter(Boolean).join(' ') || ' '
       isAdmin.value = data.isAdmin || false
     }
     // endregion ////
 
     return {
-      login,
       isAdmin,
       initFromBatch
     }

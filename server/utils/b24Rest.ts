@@ -40,7 +40,7 @@ export const B24_ZONES = [
   // bitrix24.tech hosts the OAuth server, not portals.
 ] as const
 
-function allowedZones(env: Record<string, string | undefined> = process.env): string[] {
+export function allowedZones(env: Record<string, string | undefined> = process.env): string[] {
   const extra = (env.B24_EXTRA_ZONES ?? '')
     .split(',')
     .map(s => s.trim().toLowerCase())

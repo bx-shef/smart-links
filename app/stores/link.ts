@@ -22,16 +22,6 @@ export const useLinkStore = defineStore(
       return id.value < 1
     })
 
-    /**
-     * @memo #entityId#
-     */
-    const entityPath = computed(() => {
-      switch (entityTypeId.value) {
-        case EnumCrmEntityTypeId.deal: return `/crm/deal/details/${id.value}/`
-      }
-
-      return ''
-    })
 
     function setB24(b24: B24Frame) {
       _$b24 = b24
@@ -78,7 +68,6 @@ export const useLinkStore = defineStore(
       title,
       entityMode,
       entityTypeId,
-      entityPath,
       isEmpty,
       setB24,
       initFromBatch,

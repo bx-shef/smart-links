@@ -1,4 +1,4 @@
-import { B24_ZONES } from './b24Rest'
+import { allowedZones } from './b24Rest'
 
 // Edge protections the app applies to ITSELF when it runs directly internet-facing with no reverse
 // proxy in front — the Bitrix24 Vibecode "Black Hole" target, where a single Nitro process answers
@@ -54,41 +54,54 @@ export function rateLimitKey(trustXff: boolean, xff: string | undefined, remote:
 // Bitrix24 cloud domains the app must interoperate with: the portal embeds our pages in an iframe
 // (frame-ancestors) and the frame SDK talks to the portal REST endpoint (connect-src).
 //
-// Derived from the SSRF allowlist rather than written out again — when the two drifted apart, a
-// portal in a zone the server accepted still could not open the app, because the browser blocked
-// the iframe on a frame-ancestors list that had never been updated.
-const B24_HOSTS = B24_ZONES.map(zone => `https://*.${zone}`).join(' ')
+// Derived from the SSRF allowlist — the WHOLE allowlist, B24_EXTRA_ZONES included. This was a
+// static `B24_ZONES.map(...)` once, which recreated the very drift its comment warned about, one
+// layer up: a zone added via the env var passed server-side verification while the browser still
+// blocked the iframe on a frame-ancestors list that had never heard of it. An outage that looks
+// configured-away. Computed lazily (env is read at first request, not at import) and memoised —
+// the zone set cannot change without a process restart.
+let b24HostsCache: string | null = null
+function b24Hosts(): string {
+  if (b24HostsCache === null) {
+    b24HostsCache = allowedZones().map(zone => `https://*.${zone}`).join(' ')
+  }
+  return b24HostsCache
+}
 
 // Default page policy. `script-src 'unsafe-inline'` is required, not laziness: Nuxt inlines the
 // prerendered `window.__NUXT__` payload, and the policy is not hash-based.
 // X-Frame-Options is deliberately NOT sent — it would break the portal iframe outright, and it has
 // no wildcard form; frame-ancestors is the mechanism that actually scopes embedding.
-const PAGE_CSP
-  = 'default-src \'self\'; img-src \'self\' data: https:; style-src \'self\' \'unsafe-inline\'; '
+function pageCsp(): string {
+  const hosts = b24Hosts()
+  return 'default-src \'self\'; img-src \'self\' data: https:; style-src \'self\' \'unsafe-inline\'; '
     + 'script-src \'self\' \'unsafe-inline\'; font-src \'self\' data:; '
-    + `connect-src 'self' ${B24_HOSTS}; `
-    + `frame-ancestors 'self' ${B24_HOSTS}; `
+    + `connect-src 'self' ${hosts}; `
+    + `frame-ancestors 'self' ${hosts}; `
     + 'base-uri \'self\'; object-src \'none\''
+}
 
 // The feedback slider builds a `srcdoc` iframe that pulls the Bitrix24 CRM-form loader from a
 // Bitrix CDN. A srcdoc document INHERITS the embedder's CSP, so the relaxed policy has to be served
 // on the embedding page itself — scoping it to that one path keeps every other page on PAGE_CSP.
-const FORM_CSP
-  = `default-src 'self' ${B24_HOSTS}; `
-    + `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${B24_HOSTS} https://cdn-ru.bitrix24.com https://cdn.bitrix24.com; `
-    + `style-src 'self' 'unsafe-inline' ${B24_HOSTS}; `
+function formCsp(): string {
+  const hosts = b24Hosts()
+  return `default-src 'self' ${hosts}; `
+    + `script-src 'self' 'unsafe-inline' 'unsafe-eval' ${hosts} https://cdn-ru.bitrix24.com https://cdn.bitrix24.com; `
+    + `style-src 'self' 'unsafe-inline' ${hosts}; `
     + 'img-src \'self\' data: https:; font-src \'self\' data: https:; '
-    + `connect-src 'self' ${B24_HOSTS} https://cdn-ru.bitrix24.com https://cdn.bitrix24.com; `
-    + `frame-src 'self' ${B24_HOSTS}; `
-    + `frame-ancestors 'self' ${B24_HOSTS}; `
+    + `connect-src 'self' ${hosts} https://cdn-ru.bitrix24.com https://cdn.bitrix24.com; `
+    + `frame-src 'self' ${hosts}; `
+    + `frame-ancestors 'self' ${hosts}; `
     + 'base-uri \'self\''
+}
 
 const HSTS = 'max-age=63072000; includeSubDomains'
 
 /** The path that embeds the B24 CRM form needs the relaxed policy; everything else gets the page policy. */
 export function contentSecurityPolicy(pathname: string): string {
   const path = pathname.replace(/\/+$/, '') || '/'
-  return path === '/slider/feedback' ? FORM_CSP : PAGE_CSP
+  return path === '/slider/feedback' ? formCsp() : pageCsp()
 }
 
 /**

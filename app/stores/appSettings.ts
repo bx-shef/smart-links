@@ -83,22 +83,49 @@ export const useAppSettingsStore = defineStore(
     }
 
     /**
-     * Save settings to Bitrix24.
-     * App options are stored as strings, so the config map is JSON-encoded and sent under
-     * the documented `{ options }` signature (mirrors @bitrix24/b24jssdk OptionsManager,
-     * which reads it back via getJsonObject). Live-portal round-trip: see docs/PROJECT_MAP.md.
+     * Save ONE field's config to Bitrix24, merging over the portal's current state.
+     *
+     * App options are stored as strings, so the config map is JSON-encoded and sent under the
+     * documented `{ options }` signature (mirrors @bitrix24/b24jssdk OptionsManager, which reads
+     * it back via getJsonObject).
+     *
+     * The re-read before the write is the point of this function. `app.option.set` has no
+     * compare-and-set, and this store's map was loaded when the settings slider OPENED — writing
+     * the whole map back would publish that stale snapshot, silently reverting any field another
+     * administrator (or the same one in a second tab) saved in the meantime. Their field would
+     * simply show «Поле ещё не настроено» in every card, with nothing anywhere saying why. So the
+     * save fetches the portal's current map, replaces only the key being edited, and writes that.
+     * Two admins editing the SAME field still last-write-wins — that race is honest; losing a
+     * field you never touched is not.
      */
-    const saveSettings = async () => {
+    const saveSettings = async (ufCode: string, config: UfSmartLinkType) => {
       if ($b24 === null) {
         console.error('B24 non init. Use appSettings.setB24()')
         return
       }
 
+      const fresh = await $b24.callMethod('app.option.get', {})
+      const rawOptions = fresh.getData().result?.options ?? fresh.getData().result ?? {}
+      let current: Record<string, unknown> = {}
+      try {
+        const parsed = JSON.parse(String(rawOptions.configUfListSettings ?? '{}'))
+        if (Type.isPlainObject(parsed)) {
+          current = parsed
+        }
+      } catch {
+        // Unparseable stored options: fall back to our snapshot rather than erasing everything.
+        current = JSON.parse(JSON.stringify(configUfListSettings))
+      }
+
+      current[ufCode] = config
+      // Keep the local snapshot in step with what was just published, other admins' keys included.
+      Object.assign(configUfListSettings, current)
+
       return $b24.callMethod(
         'app.option.set',
         {
           options: {
-            configUfListSettings: JSON.stringify(configUfListSettings)
+            configUfListSettings: JSON.stringify(current)
           }
         }
       )

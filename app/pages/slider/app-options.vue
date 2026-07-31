@@ -78,6 +78,16 @@ const ufFieldsUnavailable = ref(false)
 const listItems = ref<ListItem[]>([])
 const listsUnavailable = ref(false)
 const manualListError = ref('')
+/**
+ * Manual list-number entry. Forced on when the portal enumerated nothing; toggleable otherwise —
+ * group and project lists never appear in the enumeration, so the picker alone cannot reach them.
+ */
+const manualListEntry = ref(false)
+
+function toggleManualListEntry() {
+  manualListEntry.value = !manualListEntry.value
+  manualListError.value = ''
+}
 
 async function loadUfFields() {
   ufFieldsUnavailable.value = false
@@ -138,6 +148,9 @@ async function loadLists() {
   }
   listItems.value = collected.sort((a, b) => a.label.localeCompare(b.label, 'ru'))
   listsUnavailable.value = collected.length === 0
+  if (listsUnavailable.value) {
+    manualListEntry.value = true
+  }
 }
 
 /** Record the section along with the list, so the placement queries where the list actually is. */
@@ -294,14 +307,13 @@ async function makeSave() {
   try {
     page.isLoading = true
 
-    // Commit the parsed customFilter (canSave already guarantees it is valid),
-    // then persist the config into app options.
+    // Commit the parsed customFilter (canSave already guarantees it is valid), then persist THIS
+    // field's config. The store merges it over the portal's current options rather than writing
+    // the whole map from our snapshot — see saveSettings for why that distinction is data-loss.
     const parsedFilter = parseJsonObject(customFilterText.value)
     ufSmartLink.value.target.customFilter = parsedFilter.ok ? parsedFilter.value : {}
 
-    appSettings.configUfListSettings[ufCode.value] = JSON.parse(JSON.stringify(ufSmartLink.value))
-
-    await appSettings.saveSettings()
+    await appSettings.saveSettings(ufCode.value, JSON.parse(JSON.stringify(ufSmartLink.value)))
 
     await makeSendPullCommand('reload.options', { from: 'app.options' })
     await makeClose()
@@ -480,7 +492,7 @@ onUnmounted(() => {
           was the wrong design.
         -->
         <B24Select
-          v-if="!listsUnavailable"
+          v-if="!manualListEntry"
           v-model="ufSmartLink.target.entityTypeId"
           :items="listItems"
           value-key="value"
@@ -489,15 +501,27 @@ onUnmounted(() => {
           @update:model-value="onListPicked"
         />
         <!--
-          Fallback for a list the portal would not enumerate (a group or project list, a custom
+          Manual path for a list the portal would not enumerate (a group or project list, a custom
           information block). The number still does not require knowing section codes: the section
-          is resolved from the id on blur.
+          is resolved from the id on blur. This used to render only when the enumeration came back
+          EMPTY — which meant that on any portal with at least one ordinary list, a group list was
+          simply unreachable: the select could not contain it and nothing let you type its number.
         -->
         <B24InputNumber
           v-else
           v-model="ufSmartLink.target.entityTypeId"
           class="w-full"
           @blur="resolveSectionForTypedId"
+        />
+        <B24Button
+          v-if="!listsUnavailable"
+          class="mt-[8px]"
+          color="air-tertiary-no-accent"
+          size="xss"
+          :label="manualListEntry
+            ? $t('page.app-options.form.listId.pickFromList')
+            : $t('page.app-options.form.listId.enterManually')"
+          @click="toggleManualListEntry"
         />
       </B24FormField>
 

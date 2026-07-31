@@ -33,6 +33,13 @@ export default defineEventHandler(async (event) => {
     // across two rows, so skip it — this route is best-effort by design.
     return { show: false }
   }
-  const state = await getRatingState(portalKey, query)
-  return { show: shouldPrompt(state, new Date()) }
+  // Postgres being down must not turn a best-effort route into a raw 500: the client treats any
+  // failure as "don't show", so answer that shape ourselves instead of leaking Nitro's default.
+  try {
+    const state = await getRatingState(portalKey, query)
+    return { show: shouldPrompt(state, new Date()) }
+  } catch (err) {
+    console.error('[app-rating] read failed:', (err as Error).message)
+    return { show: false }
+  }
 })

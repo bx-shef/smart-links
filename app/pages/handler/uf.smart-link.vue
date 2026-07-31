@@ -9,6 +9,8 @@ import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
 import { sleepAction } from '~/utils/sleep'
 import { resolveIblockTypeId } from '~/utils/listsTarget'
+import { isNumericQuery, mergeSearchRows } from '~/utils/listsSearch'
+import { PLACEMENT_MIN_HEIGHT } from '~/utils/placement'
 import DeleteHyperlinkIcon from '@bitrix24/b24icons-vue/main/DeleteHyperlinkIcon'
 import DocumentPlusIcon from '@bitrix24/b24icons-vue/main/DocumentPlusIcon'
 import RefreshIcon from '@bitrix24/b24icons-vue/outline/RefreshIcon'
@@ -16,9 +18,6 @@ import RefreshIcon from '@bitrix24/b24icons-vue/outline/RefreshIcon'
 definePageMeta({
   layout: 'uf-placement'
 })
-
-/** Floor for the placement height, so an empty state does not collapse to nothing. */
-const MIN_PLACEMENT_HEIGHT = 85
 
 interface EntityItem {
   id: number
@@ -69,6 +68,10 @@ const ufDestinationCode = ref('')
  * Candidate list to pick a target from
  */
 const listEntity = ref<EntityItem[]>([])
+/** True when the last search filled a whole REST page — i.e. the portal has more than we show. */
+const listTruncated = ref(false)
+/** Bitrix24 REST list methods return at most this many rows per call. */
+const REST_PAGE_SIZE = 50
 
 const filterTitle = ref('')
 const filterFromOrigin = ref<Record<string, undefined | number>>({
@@ -309,7 +312,10 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
 
 
       const params = {
-        entityTypeId: link.entityTypeId,
+        // From the config, not the link store: the two are only equal because every load copies
+        // config -> link, and mixing sources is how a section from one config pairs with the id of
+        // another. One source of truth for what we query.
+        entityTypeId: configUfSetting.value.target.entityTypeId,
         select: [
           'id',
           'title'
@@ -326,6 +332,9 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
       )
 
       listEntity.value = (response.getData().result.items || []) as EntityItem[]
+      // REST pages at 50 and this is a single call: a full page means "there is more", and
+      // without saying so an unfiltered portal with 200 deals reads as a portal with 50.
+      listTruncated.value = listEntity.value.length >= REST_PAGE_SIZE
     } else if (configUfSetting.value.target.entityMode === 'lists') {
       const filter = Object.assign(
         {},
@@ -339,74 +348,30 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
         filter[configUfSetting.value.target.clientFields.contactId] = `C_${filterFromOrigin.value.contactId}`
       }
 
-      const listResult: EntityItem[] = []
-
-      // First pass: filter by ID (Lists has no OR support)
-      if (filterTitle.value.length > 0) {
-        filter['ID'] = filterTitle.value
-      }
-
-      const params = {
-        IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value.target),
-        IBLOCK_ID: link.entityTypeId,
-        SELECT: [
-          'ID',
-          'NAME'
-        ],
-        FILTER: filter,
-        ELEMENT_ORDER: {
-          SORT: 'desc',
-          ID: 'desc',
-        }
-      }
-
-      const response = await $b24.callMethod(
-        'lists.element.get',
-        params
-      )
-
-      const someData = response.getData().result || []
-      someData.forEach((row: any) => {
-        listResult.push({
-          id: row['ID'],
-          title: row['NAME'],
-        } as EntityItem)
-      })
-
-      // Second pass: filter by title
-      if (filterTitle.value.length > 0) {
-        filter['ID'] = undefined
-        filter['%NAME'] = filterTitle.value
-
-        const params = {
-          IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value.target),
-          IBLOCK_ID: link.entityTypeId,
-          SELECT: [
-            'ID',
-            'NAME'
-          ],
-          FILTER: filter,
+      // Two passes because the Lists filter has no OR: by exact ID (only when the query can BE an
+      // id — a word there is a wasted call), then by %NAME. Merge and dedup live in a tested util:
+      // an element whose name contains its own number used to match both passes and render twice,
+      // duplicate v-for key included.
+      const query = filterTitle.value.trim()
+      const listCall = async (extra: Record<string, unknown>) => {
+        const response = await $b24!.callMethod('lists.element.get', {
+          IBLOCK_TYPE_ID: resolveIblockTypeId(configUfSetting.value!.target),
+          IBLOCK_ID: configUfSetting.value!.target.entityTypeId,
+          SELECT: ['ID', 'NAME'],
+          FILTER: { ...filter, ...extra },
           ELEMENT_ORDER: {
             SORT: 'desc',
             ID: 'desc',
           }
-        }
-
-        const response = await $b24.callMethod(
-          'lists.element.get',
-          params
-        )
-
-        const someData = response.getData().result || []
-        someData.forEach((row: any) => {
-          listResult.push({
-            id: row['ID'],
-            title: row['NAME'],
-          } as EntityItem)
         })
+        return (response.getData().result || []) as Array<{ ID?: unknown, NAME?: unknown }>
       }
 
-      listEntity.value = listResult
+      const byId = query && isNumericQuery(query) ? await listCall({ ID: query }) : []
+      const byName = query ? await listCall({ '%NAME': query }) : await listCall({})
+
+      listEntity.value = mergeSearchRows(byId, byName)
+      listTruncated.value = byName.length >= REST_PAGE_SIZE
     }
   } catch (error) {
     reportActionError(error, 'uf.smart-link.error.load')
@@ -487,8 +452,9 @@ async function addNewEntity() {
     return
   }
 
-  const url = appSettings.getNewTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', '0')
-  const path = $b24.slider.getUrl(url)
+  // No '#entityId#' replace here: getNewTargetPath returns a complete creation path with no
+  // marker — only getTargetPath carries one.
+  const path = $b24.slider.getUrl(appSettings.getNewTargetPath(link.entityTypeId, link.entityMode))
   /**
    * @todo write proper param substitution / prefill here
    */
@@ -725,7 +691,7 @@ async function resizeWindow() {
   // whole placement with the full-screen error page: a cosmetic call taking down the feature. A
   // placement at the portal's default size is a far better outcome than no placement.
   try {
-    await $b24?.parent.resizeWindowAuto(undefined, MIN_PLACEMENT_HEIGHT)
+    await $b24?.parent.resizeWindowAuto(undefined, PLACEMENT_MIN_HEIGHT)
   } catch (error) {
     $logger.warn('resizeWindowAuto refused the measured size', error)
   }
@@ -889,12 +855,31 @@ onUnmounted(() => {
                   />
                 </td>
               </tr>
+              <tr v-if="listTruncated">
+                <td colspan="2">
+                  <B24Alert
+                    class="mt-[4px]"
+                    size="sm"
+                    color="air-secondary"
+                    :description="$t('uf.smart-link.list.truncated')"
+                  />
+                </td>
+              </tr>
               <template
                 v-for="(entity) in listEntity"
                 :key="entity.id"
               >
               <tr>
-                <td><B24Link is-action @click="makeOpenLinkById(entity)">{{ entity.id }}</B24Link></td>
+                <!-- The number and the title do DIFFERENT things (open vs link), and a bare "12"
+                     does not say which — the aria-label carries the verb the eye infers from
+                     column position. -->
+                <td>
+                  <B24Link
+                    is-action
+                    :aria-label="`${$t('uf.smart-link.list.openAria')} ${entity.id}`"
+                    @click="makeOpenLinkById(entity)"
+                  >{{ entity.id }}</B24Link>
+                </td>
                 <td><B24Link is-action @click="makeAddLink(entity)">{{ entity.title }}</B24Link></td>
               </tr>
               </template>
