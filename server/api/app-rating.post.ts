@@ -60,7 +60,7 @@ export default defineEventHandler(async (event) => {
       await markOpened(portalKey, query)
     }
   } catch (err) {
-    console.error('[app-rating] write failed:', (err as Error).message)
+    console.error('[app-rating] write failed:', err)
     setResponseStatus(event, 503)
     return { error: 'storage unavailable' }
   }

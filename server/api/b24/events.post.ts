@@ -35,6 +35,7 @@ export default defineEventHandler(async (event) => {
   const declared = Number(getHeader(event, 'content-length') ?? '')
   if (Number.isFinite(declared) && declared > MAX_EVENT_BODY_BYTES) {
     setResponseStatus(event, 413)
+    console.warn('[b24-events] REJECTED: declared body over cap')
     return { ok: false, error: 'payload too large' }
   }
 
@@ -45,7 +46,7 @@ export default defineEventHandler(async (event) => {
   const body = await readBodyCapped(event)
   if (body === null) {
     setResponseStatus(event, 413)
-    console.info('[b24-events] REJECTED: body over cap (chunked or mis-declared length)')
+    console.warn('[b24-events] REJECTED: body over cap (chunked or mis-declared length)')
     return { ok: false, error: 'payload too large' }
   }
   const ev = extractEvent(parseBracketForm(body))
@@ -214,19 +215,31 @@ async function readBodyCapped(event: Parameters<typeof getRequestWebStream>[0]):
   const reader = stream.getReader()
   const chunks: Uint8Array[] = []
   let size = 0
+  let over = false
   try {
     for (;;) {
       const { done, value } = await reader.read()
       if (done) break
       size += value.byteLength
       if (size > MAX_EVENT_BODY_BYTES) {
-        await reader.cancel().catch(() => {})
-        return null
+        // Drain to completion, discarding, instead of cancel(): h3's request stream has no cancel
+        // handler, so cancelling closes the controller while node keeps emitting `data` — every
+        // late chunk then throws "Controller is already closed" inside an EventEmitter callback,
+        // an uncaughtException an unauthenticated caller can trigger at will. Reproduced live with
+        // a slow chunked sender. Draining keeps memory flat (chunks are dropped) and lets the
+        // stream end on its own, so the 413 is actually delivered.
+        over = true
+        chunks.length = 0
       }
-      chunks.push(value)
+      if (!over) {
+        chunks.push(value)
+      }
     }
   } finally {
     reader.releaseLock()
+  }
+  if (over) {
+    return null
   }
   return Buffer.concat(chunks).toString('utf8')
 }

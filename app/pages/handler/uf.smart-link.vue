@@ -298,14 +298,17 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
         filter[configUfSetting.value.target.clientFields.contactId] = filterFromOrigin.value.contactId
       }
 
-      if (filterTitle.value.length > 0) {
+      // Trimmed, like the Lists branch: a copy-pasted " 12 " should mean the record number, and a
+      // whitespace-only query should mean "no query", in both target modes alike.
+      const crmQuery = filterTitle.value.trim()
+      if (crmQuery.length > 0) {
         filter[0] = {
           'logic': 'OR',
           '0': {
-            '=id': filterTitle.value
+            '=id': crmQuery
           },
           '1': {
-            '%=title': `%${filterTitle.value}%`
+            '%=title': `%${crmQuery}%`
           }
         }
       }
@@ -816,7 +819,7 @@ onUnmounted(() => {
             </colgroup>
             <thead>
               <tr>
-                <th colspan="3">
+                <th colspan="2">
                   <B24ButtonGroup size="xs">
                     <B24Button
                       :icon="DocumentPlusIcon"

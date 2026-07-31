@@ -222,7 +222,9 @@ const errors = computed(() => ({
   customFilter: customFilterError.value
 }))
 
-const canSave = computed(() => !errors.value.ufDestination && !errors.value.entityTypeId && !errors.value.customFilter)
+// manualListError blocks the save too: «список не найден» followed by a successful save would
+// persist a number the portal itself said does not exist.
+const canSave = computed(() => !errors.value.ufDestination && !errors.value.entityTypeId && !errors.value.customFilter && !manualListError.value)
 
 // Errors are only SHOWN once the admin has tried to save. Rendering them eagerly meant a freshly
 // opened settings slider greeted the admin with a red «укажите код поля-приёмника» before they had
@@ -306,6 +308,18 @@ async function makeSave() {
 
   try {
     page.isLoading = true
+
+    // A manually typed list id pairs with a section resolved on blur — an async call the save can
+    // outrun: type, click «Сохранить» fast enough, and the config persists the PREVIOUS list's
+    // section, which the placement turns into a hard REST error. Re-resolve synchronously with the
+    // save so the pair is always consistent; a failed resolve sets manualListError and aborts.
+    if (ufSmartLink.value.target.entityMode === 'lists' && manualListEntry.value) {
+      await resolveSectionForTypedId()
+      if (manualListError.value) {
+        page.isLoading = false
+        return
+      }
+    }
 
     // Commit the parsed customFilter (canSave already guarantees it is valid), then persist THIS
     // field's config. The store merges it over the portal's current options rather than writing
@@ -404,6 +418,14 @@ onMounted(async () => {
     await loadUfFields()
     if (ufSmartLink.value.target.entityMode === 'lists') {
       await loadLists()
+      // A saved group/project list can never be in the enumeration — reopening such a config
+      // through the picker showed a BLANK select over a perfectly valid saved number, which reads
+      // as "not configured" and invites the admin to "fix" it. Start in manual mode when the saved
+      // number is not among the enumerated lists.
+      const savedId = Number(ufSmartLink.value.target.entityTypeId)
+      if (savedId > 0 && !listItems.value.some(item => item.value === savedId)) {
+        manualListEntry.value = true
+      }
     }
     setupEntityModeWatch()
   } catch (error) {

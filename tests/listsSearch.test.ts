@@ -32,6 +32,15 @@ describe('mergeSearchRows', () => {
     expect(mergeSearchRows([{ ID: 'abc', NAME: 'x' }, { NAME: 'y' }, { ID: '0', NAME: 'z' }])).toEqual([])
   })
 
+  it('не подбирает префикс числа: «1.5» и «12abc» — не номера записей', () => {
+    // parseInt would keep these as 1 and 12, and dedup would then let the junk row SHADOW the
+    // genuine element 1 (first occurrence wins) — a real row silently dropped.
+    expect(mergeSearchRows([{ ID: '1.5', NAME: 'мусор' }, { ID: '1', NAME: 'настоящая' }]))
+      .toEqual([{ id: 1, title: 'настоящая' }])
+    expect(mergeSearchRows([{ ID: '12abc', NAME: 'x' }])).toEqual([])
+    expect(mergeSearchRows([{ ID: '-3', NAME: 'x' }])).toEqual([])
+  })
+
   it('сохраняет порядок: сперва точное совпадение по номеру, затем по названию', () => {
     const rows = mergeSearchRows([{ ID: '3', NAME: 'три' }], [{ ID: '1', NAME: 'один' }, { ID: '2', NAME: 'два' }])
     expect(rows.map(r => r.id)).toEqual([3, 1, 2])

@@ -84,7 +84,7 @@ CRM-сущности требуют расширения резолверов.
    клиента останутся у издателя навсегда (см. `docs/DATA_POLICY.md`).
 4. `userFields` — регистрирует тип поля: `userfieldtype.add` с
    `USER_TYPE_ID = type_smart_link_<dev|prod>`, `HANDLER = <appUrl>handler/uf.smart-link`,
-   `TITLE = [dev|prod] SmartLink`, `OPTIONS.height = 65`. Перед добавлением — `userfieldtype.delete`
+   `TITLE = [dev|prod] SmartLink`, `OPTIONS.height = PLACEMENT_MIN_HEIGHT` (85, общая константа с floor плейсмента). Перед добавлением — `userfieldtype.delete`
    (идемпотентность). `appUrl` вычисляется из текущего URL страницы установки.
 5. `finish` — прогресс 100%, конфетти, `installFinish()`.
 
@@ -165,7 +165,7 @@ CRM-сущности требуют расширения резолверов.
   плюс `processErrorGlobal` (единый показ ошибок через `showError`/404) и pull-клиент.
 - Сторы (Pinia): `appSettings` (версия/статус/`isTrial`/`configUfListSettings` + пути к
   сущностям + `saveSettings`), `link` (текущая целевая ссылка), `page` (title/description/
-  isLoading), `user` (`login`/`isAdmin`).
+  isLoading), `user` (`isAdmin`).
 - `middleware/01.app.page.or.slider.global.ts` — по `placement.options.place` роутит на
   страницу слайдера (`app-options`/`feedback`).
 - Обратная связь (`slider/feedback`) — CRM-форма Bitrix24 в iframe по

@@ -31,8 +31,15 @@ export function mergeSearchRows(...passes: Array<Array<{ ID?: unknown, NAME?: un
   const merged: ListsSearchRow[] = []
   for (const rows of passes) {
     for (const row of rows) {
-      const id = Number.parseInt(String(row?.ID ?? ''), 10)
-      if (!Number.isFinite(id) || id < 1 || seen.has(id)) {
+      // Strict digits-only, not parseInt's prefix parsing: '1.5' and '12abc' would otherwise be
+      // KEPT as ids 1 and 12 — and first-occurrence-wins dedup would then let such junk shadow
+      // the genuine element 1. A row we cannot address exactly is noise, not a candidate.
+      const rawId = String(row?.ID ?? '').trim()
+      if (!/^\d+$/.test(rawId)) {
+        continue
+      }
+      const id = Number.parseInt(rawId, 10)
+      if (id < 1 || seen.has(id)) {
         continue
       }
       seen.add(id)
