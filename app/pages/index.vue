@@ -33,9 +33,20 @@ useSeoMeta({
   ogDescription: () => t('landing.seo.description'),
   // Same form as the canonical below — two spellings of one URL split link signals.
   ogUrl: () => (siteUrl.value ? `${siteUrl.value}/` : undefined),
-  twitterCard: 'summary',
+  // Share card image. MUST be absolute: Facebook and LinkedIn drop a relative og:image, and this
+  // page is prerendered — whatever is baked at build time is what scrapers see. Without a usable
+  // siteUrl every image tag is omitted and the card falls back to `summary`: a large card promising
+  // a picture that never loads looks worse than a small one that never promised it.
+  ogImage: () => (siteUrl.value ? `${siteUrl.value}/og.png` : undefined),
+  ogImageWidth: () => (siteUrl.value ? 1200 : undefined),
+  ogImageHeight: () => (siteUrl.value ? 630 : undefined),
+  ogImageType: () => (siteUrl.value ? 'image/png' : undefined),
+  ogImageAlt: () => t('landing.seo.title'),
+  twitterCard: () => (siteUrl.value ? 'summary_large_image' : 'summary'),
   twitterTitle: () => t('landing.seo.title'),
-  twitterDescription: () => t('landing.seo.description')
+  twitterDescription: () => t('landing.seo.description'),
+  twitterImage: () => (siteUrl.value ? `${siteUrl.value}/og.png` : undefined),
+  twitterImageAlt: () => t('landing.seo.title')
 })
 
 useHead({
