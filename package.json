@@ -45,7 +45,7 @@
     "dotenv": "^16.4.5",
     "eslint": "^9.34.0",
     "glob": "^10.4.5",
-    "openai": "^5.16.0",
+    "openai": "^7.3.0",
     "playwright-core": "^1.62.1",
     "tsx": "^4.20.5",
     "typescript": "^5.9.2",
