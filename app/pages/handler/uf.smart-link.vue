@@ -28,6 +28,12 @@ interface EntityItem {
 
 const { t, locales: localesI18n, setLocale } = useI18n()
 const page = usePageStore()
+// In SETUP, not just onMounted: all routes prerender, and during SSG onMounted never runs — with
+// isLoading starting false the prerendered HTML carried the fully visible DEFAULT form/body, and
+// on a slow network the admin watched defaults get replaced by saved values (the exact
+// «читается как сброс настроек» class). Set here, the static HTML ships the layout's spinner and
+// the real content first appears already loaded; onMounted's finally clears it as before.
+page.isLoading = true
 
 // region Init ////
 const { $logger, moduleId, initApp, reloadData, b24Helper, destroyB24Helper, usePullClient, useSubscribePullClient, startPullClient, processErrorGlobal } = useAppInit('uf-placement')
@@ -296,7 +302,6 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
         filterFromOrigin.value,
         filterTitle.value.trim()
       )
-
 
       const params = {
         // From the config, not the link store: the two are only equal because every load copies
