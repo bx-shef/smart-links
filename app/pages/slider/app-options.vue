@@ -15,6 +15,12 @@ definePageMeta({
 
 const { t, locales: localesI18n, setLocale } = useI18n()
 const page = usePageStore()
+// In SETUP, not just onMounted: all routes prerender, and during SSG onMounted never runs — with
+// isLoading starting false the prerendered HTML carried the fully visible DEFAULT form/body, and
+// on a slow network the admin watched defaults get replaced by saved values (the exact
+// «читается как сброс настроек» class). Set here, the static HTML ships the layout's spinner and
+// the real content first appears already loaded; onMounted's finally clears it as before.
+page.isLoading = true
 const toast = useToast()
 
 // region Init ////
