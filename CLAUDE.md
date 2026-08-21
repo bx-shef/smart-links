@@ -52,6 +52,14 @@ Bitrix24-приложение «Умные ссылки». Издатель ИП
   `placement.*` через него недоступны в принципе (`Application context required`) — регистрация
   UF-типа, хранилище настроек и рукопожатие плейсмента проверяются только на установленном
   приложении (живой прогон за владельцем). Скрипт это печатает, а не делает вид, что покрыл.
+- `scripts/screenshot.mjs` / `scripts/probe-overflow.mjs` (`pnpm screenshot` / `pnpm probe:overflow`) —
+  глаза для вёрстки до живого портала: снимки статики и поиск виновника горизонтального
+  переполнения. Локальные серверы слушают только 127.0.0.1 и ходят через общий замок от обхода
+  каталога `scripts/lib/staticPath.mjs` (гард поведением — `tests/staticPath.test.ts`, включая
+  «каждый createServer-скрипт ходит через замок»). ⚠ Пробегают по статике вне фрейма — живой
+  портал не заменяют.
+- `scripts/make-icons.mjs` / `scripts/make-og.mjs` (`pnpm icons` / `pnpm og`) — графика карточки
+  и лендинга (иконки, og:image).
 - `template/` — HTML-шаблон загрузчика dev-сервера.
 - `server/` — Nitro: `api/` (`health`, `app-rating` get/post, `b24/events` — вебхук install/uninstall),
   `utils/` (фрейм-токен, SSRF-гард + allowlist зон Б24, политика и store рейтинга, OAuth-хранилище
@@ -74,9 +82,14 @@ pnpm dev          # дев-сервер
 pnpm lint         # ESLint
 pnpm lint:fix     # ESLint --fix
 pnpm typecheck    # nuxt prepare + vue-tsc
-pnpm test         # Vitest (unit)
+pnpm test         # Vitest (оба проекта: unit + nuxt)
+pnpm test:unit    # только unit-проект (чистое ядро, быстрее)
 pnpm check        # lint + typecheck + test
 pnpm b24:smoke    # живая сверка REST-фактов с порталом (нужен .env.b24test, только чтение)
+pnpm screenshot   # снимки пререндеренных маршрутов × 2 вьюпорта в screenshots/ (сначала pnpm generate)
+pnpm probe:overflow # виновник горизонтального переполнения на 375px, exit 1 при находке (сначала pnpm generate)
+pnpm icons        # иконки приложения из favicon.svg
+pnpm og           # og:image лендинга из текстов локали
 pnpm build        # served-сборка (Nitro, preset node-server) + пререндер — основной путь деплоя
 pnpm generate     # SSG-сборка в .output/public
 pnpm generate-archive-for-b24  # generate → fix-paths → create-archive (архив для портала)
