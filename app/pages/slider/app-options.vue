@@ -7,6 +7,7 @@ import { usePageStore } from '~/stores/page'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
 import { DEFAULT_IBLOCK_TYPE_ID, ENUMERABLE_IBLOCK_TYPES, resolveIblockTypeId } from '~/utils/listsTarget'
+import { SMART_INVOICE_TYPE_ID } from '~/utils/crmTargetPath'
 import CloudErrorIcon from '@bitrix24/b24icons-vue/main/CloudErrorIcon'
 
 definePageMeta({
@@ -61,10 +62,39 @@ const entityModeItems = computed(() => [
 ])
 
 // CRM targets are constrained to the entity types the path resolvers support
-// (see appSettings.getTargetPath). Currently only Deal.
+// (app/utils/crmTargetPath.ts): lead and deal by named routes, the smart invoice and every smart
+// process via the universal /crm/type/ route. Smart processes are offered BY NAME (crm.type.list),
+// never as «введите ID типа» — the reference's UX doctrine, and the only way an admin can tell
+// two processes apart. Fail-soft: a portal that refuses the enumeration (no rights — or no plan:
+// the free plan answers FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN, verified live 2026-08-21) keeps
+// the three static types and says why the rest are missing.
+const dynamicTypeItems = ref<{ label: string, value: number }[]>([])
+const dynamicTypesUnavailable = ref(false)
 const crmTypeItems = computed(() => [
-  { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal }
+  { label: t('page.app-options.form.crmType.lead'), value: 1 },
+  { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal },
+  { label: t('page.app-options.form.crmType.invoice'), value: SMART_INVOICE_TYPE_ID },
+  ...dynamicTypeItems.value
 ])
+
+async function loadCrmTypes() {
+  dynamicTypesUnavailable.value = false
+  if (!$b24) {
+    return
+  }
+  try {
+    const response = await $b24.callMethod('crm.type.list', {})
+    const types = (response.getData().result?.types ?? []) as Array<{ entityTypeId?: number, title?: string }>
+    dynamicTypeItems.value = types
+      // The smart invoice comes back from the enumeration too — it is already a static option
+      // above, and two rows for one type read as a choice that isn't one.
+      .filter(item => typeof item.entityTypeId === 'number' && item.entityTypeId !== SMART_INVOICE_TYPE_ID)
+      .map(item => ({ label: String(item.title ?? item.entityTypeId), value: item.entityTypeId as number }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  } catch {
+    dynamicTypesUnavailable.value = true
+  }
+}
 // endregion ////
 
 // region Pickers ////
@@ -422,6 +452,9 @@ onMounted(async () => {
     // After loadData, so the lookups see the loaded config; awaited so the admin does not get a
     // free-text input that turns into a select under their cursor.
     await loadUfFields()
+    // Not awaited into the critical path deliberately: the CRM-type select is usable with its
+    // three static options while smart processes are still being enumerated (or refused).
+    void loadCrmTypes()
     if (ufSmartLink.value.target.entityMode === 'lists') {
       await loadLists()
       // A saved group/project list can never be in the enumeration — reopening such a config
@@ -495,6 +528,7 @@ onUnmounted(() => {
       <B24FormField
         v-if="ufSmartLink.target.entityMode === 'crm'"
         :label="$t('page.app-options.form.crmType.label')"
+        :help="dynamicTypesUnavailable ? $t('page.app-options.form.crmType.dynamicUnavailable') : undefined"
         :error="shownErrors.entityTypeId"
         required
       >
