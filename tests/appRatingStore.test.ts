@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import type { QueryFn } from '~~/server/db/query'
 import {
-  getRatingState, markPrompted, markOpened, markReviewed, clearOpened
+  getRatingState, markPrompted, markOpened, markReviewed, clearOpened, touchFirstSeen
 } from '~~/server/utils/appRatingStore'
+import { installCreatedAt } from '~~/server/utils/tokenStore'
 
 /** Fake QueryFn that records calls and returns preset rows. */
 function fakeQuery(rows: Array<Record<string, unknown>> = []) {
@@ -73,5 +74,39 @@ describe('rating mutations', () => {
     expect(calls[0]?.sql).toContain('opened_at = NULL')
     expect(calls[0]?.sql).toContain('reviewed = false')
     expect(calls[0]?.params).toEqual(['key1'])
+  })
+})
+
+describe('install-age anchors', () => {
+  it('getRatingState carries the row created_at as firstSeenAt', async () => {
+    const { query } = fakeQuery([
+      { prompted_at: null, opened_at: null, reviewed: false, created_at: '2026-06-01T00:00:00Z' }
+    ])
+    const state = await getRatingState('c.bitrix24.by', query)
+    expect(state?.firstSeenAt).toBeInstanceOf(Date)
+  })
+
+  it('a row without created_at yields firstSeenAt null, not an invalid date', async () => {
+    const { query } = fakeQuery([
+      { prompted_at: null, opened_at: null, reviewed: false, created_at: null }
+    ])
+    const state = await getRatingState('c.bitrix24.by', query)
+    expect(state?.firstSeenAt).toBeNull()
+  })
+
+  it('touchFirstSeen inserts the bare row and touches nothing on conflict', async () => {
+    const { query, calls } = fakeQuery()
+    await touchFirstSeen('c.bitrix24.by', query)
+    expect(calls[0]?.sql).toContain('INSERT INTO app_rating (portal_key)')
+    expect(calls[0]?.sql).toContain('DO NOTHING')
+    expect(calls[0]?.params).toEqual(['c.bitrix24.by'])
+  })
+
+  it('installCreatedAt reads portal_tokens.created_at and answers null for unknown keys', async () => {
+    const hit = fakeQuery([{ created_at: '2026-06-01T00:00:00Z' }])
+    expect(await installCreatedAt('member-1', hit.query)).toBeInstanceOf(Date)
+    expect(hit.calls[0]?.sql).toContain('FROM portal_tokens')
+    const miss = fakeQuery([])
+    expect(await installCreatedAt('c.bitrix24.by', miss.query)).toBeNull()
   })
 })

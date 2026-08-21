@@ -1,15 +1,18 @@
 import { extractFrameAuth } from '../utils/frameAuth'
 import { portalKeyForHost, verifyFrameToken } from '../utils/frameVerify'
-import { memberIdForDomain } from '../utils/tokenStore'
-import { getRatingState } from '../utils/appRatingStore'
+import { installCreatedAt, memberIdForDomain } from '../utils/tokenStore'
+import { getRatingState, touchFirstSeen } from '../utils/appRatingStore'
 import { shouldPrompt } from '../utils/appRatingPolicy'
 import { allowFrameRequest } from '../utils/frameRateGuard'
 import { query, dbEnabled } from '../db/client'
 
 // GET /api/app-rating — should the in-portal «оцените приложение» modal be shown for this portal?
 // Frame-token authenticated. The per-portal key is derived from the VERIFIED host — never trusted
-// from the client — and resolves to the installed portal's member_id where one is known. Side-effect-free: it only READS state; the client stamps prompted_at via POST when the
-// modal actually renders. Inert (show:false) outside a portal or without a DB.
+// from the client — and resolves to the installed portal's member_id where one is known. The one
+// write it performs is creating the portal's rating row on FIRST sighting (touchFirstSeen) — that
+// is what starts the install-age clock for a portal with no portal_tokens row; everything else is
+// a read, and the client stamps prompted_at via POST when the modal actually renders. Inert
+// (show:false) outside a portal or without a DB.
 export default defineEventHandler(async (event) => {
   if (!dbEnabled()) {
     return { show: false } // no store — nothing to prompt
@@ -34,16 +37,27 @@ export default defineEventHandler(async (event) => {
     return { show: false }
   }
   // Postgres being down must not turn a best-effort route into a raw 500: the client treats any
-  // failure as "don't show", so answer that shape ourselves. The try covers ONLY the store read —
+  // failure as "don't show", so answer that shape ourselves. The try covers ONLY the store I/O —
   // shouldPrompt is pure policy code, and a bug there deserves a loud 500, not a silent false.
   let state
+  let installedAt: Date | null
   try {
     state = await getRatingState(portalKey, query)
+    if (!state) {
+      // First sighting: create the row so its created_at starts the install-age clock. Answering
+      // show:false this time is the point — «не раньше N суток» counts from here for portals the
+      // OAuth webhook never registered (host keys), and from portal_tokens.created_at otherwise.
+      await touchFirstSeen(portalKey, query)
+    }
+    // Prefer the real install date; fall back to first sighting. For a member-keyed portal the
+    // token row exists by construction (the key IS its member_id), so the fallback only ever
+    // serves host-keyed portals.
+    installedAt = await installCreatedAt(portalKey, query) ?? state?.firstSeenAt ?? null
   } catch (err) {
     // The error object itself (stack included), never portalKey — that is a portal identifier,
     // and the logging policy is portalHash-only.
     console.error('[app-rating] read failed:', err)
     return { show: false }
   }
-  return { show: shouldPrompt(state, new Date()) }
+  return { show: shouldPrompt(state, new Date(), { installedAt }) }
 })

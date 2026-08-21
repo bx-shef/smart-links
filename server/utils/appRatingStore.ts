@@ -6,10 +6,16 @@ import type { AppRatingState } from './appRatingPolicy'
 // generic TEXT so the key source can change without a schema migration. All writes are UPSERTs so
 // a portal with no row yet is handled transparently. Adapted from ai-price-import.
 
+/** Rating state plus when this portal was first seen (the row's created_at) — the fallback
+ *  install-age anchor for portals with no portal_tokens row. */
+export interface AppRatingStateRow extends AppRatingState {
+  firstSeenAt: Date | null
+}
+
 /** Read the rating state for a portal, or null when there is no row yet. */
-export async function getRatingState(portalKey: string, query: QueryFn): Promise<AppRatingState | null> {
+export async function getRatingState(portalKey: string, query: QueryFn): Promise<AppRatingStateRow | null> {
   const { rows } = await query(
-    'SELECT prompted_at, opened_at, reviewed FROM app_rating WHERE portal_key=$1',
+    'SELECT prompted_at, opened_at, reviewed, created_at FROM app_rating WHERE portal_key=$1',
     [portalKey]
   )
   const r = rows[0]
@@ -20,8 +26,23 @@ export async function getRatingState(portalKey: string, query: QueryFn): Promise
   return {
     promptedAt: r.prompted_at ? new Date(r.prompted_at as string | Date) : null,
     openedAt: r.opened_at ? new Date(r.opened_at as string | Date) : null,
-    reviewed: r.reviewed === true
+    reviewed: r.reviewed === true,
+    firstSeenAt: r.created_at ? new Date(r.created_at as string | Date) : null
   }
+}
+
+/**
+ * Create the portal's rating row on first sighting, changing nothing else (DO NOTHING on
+ * conflict). This is what starts the install-age clock for a portal that has no portal_tokens row
+ * (host-keyed, pre-OAuth deployments): without it «unknown age → too early» would silence the
+ * prompt forever — the row is only otherwise created by markPrompted, which never runs while the
+ * policy answers false.
+ */
+export async function touchFirstSeen(portalKey: string, query: QueryFn): Promise<void> {
+  await query(
+    'INSERT INTO app_rating (portal_key) VALUES ($1) ON CONFLICT (portal_key) DO NOTHING',
+    [portalKey]
+  )
 }
 
 /** Stamp prompted_at = now() (the modal was actually shown). Upserts the row. Never touches a

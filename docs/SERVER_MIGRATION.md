@@ -133,7 +133,12 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
   `NUXT_PUBLIC_B24_MARKET_CODE` → модалка не всплывает.
 - **S2b (DB-слой рейтинга) — сделано:** чистые ядра `server/utils/appRatingPolicy.ts`
   (`shouldPrompt`, Date-based) и `server/utils/appRatingStore.ts` (DI над `QueryFn`,
-  get/markPrompted/markOpened/markReviewed/clearOpened; ключ `portal_key`) — тесты фейком.
+  get/markPrompted/markOpened/markReviewed/clearOpened/touchFirstSeen; ключ `portal_key`) — тесты
+  фейком. Порт #397 эталона: первый показ **не раньше 4 суток от установки** — якорь
+  `portal_tokens.created_at` (UPSERT его не трогает, деинсталляция сносит строку — вернувшийся
+  портал начинает отсчёт заново), для host-ключей без OAuth-строки — `app_rating.created_at`
+  первого обращения (строку заводит `GET` при первой встрече, иначе «неизвестный возраст → рано»
+  замолчал бы попап навсегда). Неизвестный возраст читается как «рано», не как «показывай».
   Живой край: `server/db/query.ts` (тип `QueryFn`), `server/db/client.ts` (`pg` пул по
   `DATABASE_URL`, `dbEnabled`), `server/db/schema.ts` (таблица `app_rating`),
   `server/plugins/migrate.ts` (идемпотентная миграция на старте, **no-op без `DATABASE_URL`**).
