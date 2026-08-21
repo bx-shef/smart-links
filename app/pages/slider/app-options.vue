@@ -7,6 +7,7 @@ import { usePageStore } from '~/stores/page'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
 import { DEFAULT_IBLOCK_TYPE_ID, ENUMERABLE_IBLOCK_TYPES, resolveIblockTypeId } from '~/utils/listsTarget'
+import { DYNAMIC_TYPE_MIN, SMART_INVOICE_TYPE_ID } from '~/utils/crmTargetPath'
 import CloudErrorIcon from '@bitrix24/b24icons-vue/main/CloudErrorIcon'
 
 definePageMeta({
@@ -61,10 +62,54 @@ const entityModeItems = computed(() => [
 ])
 
 // CRM targets are constrained to the entity types the path resolvers support
-// (see appSettings.getTargetPath). Currently only Deal.
-const crmTypeItems = computed(() => [
-  { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal }
-])
+// (app/utils/crmTargetPath.ts): lead and deal by named routes, the smart invoice and every smart
+// process via the universal /crm/type/ route. Smart processes are offered BY NAME (crm.type.list),
+// never as «введите ID типа» — the reference's UX doctrine, and the only way an admin can tell
+// two processes apart. Fail-soft: a portal that refuses the enumeration (no rights — or no plan:
+// the free plan answers FEATURE_NOT_AVAILABLE_ON_CURRENT_PLAN, verified live 2026-08-21) keeps
+// the three static types and says why the rest are missing.
+const dynamicTypeItems = ref<{ label: string, value: number }[]>([])
+const dynamicTypesUnavailable = ref(false)
+const crmTypeItems = computed(() => {
+  const items = [
+    { label: t('page.app-options.form.crmType.lead'), value: 1 },
+    { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal },
+    { label: t('page.app-options.form.crmType.invoice'), value: SMART_INVOICE_TYPE_ID },
+    ...dynamicTypeItems.value
+  ]
+  // The lists-branch lesson, applied here too: a saved smart process ABSENT from the enumeration
+  // (still loading, plan downgraded, rights) must not render as a naked «1256» over a working
+  // config — b24ui shows the raw value when no item matches, and the help text right under it
+  // would then invite the admin to «fix» a setting that is not broken. A named placeholder keeps
+  // the saved value selectable and honest in both windows.
+  const saved = Number(ufSmartLink.value.target.entityTypeId)
+  if (saved >= DYNAMIC_TYPE_MIN && !dynamicTypeItems.value.some(item => item.value === saved)) {
+    items.push({ label: t('page.app-options.form.crmType.savedProcess', { id: saved }), value: saved })
+  }
+  return items
+})
+
+async function loadCrmTypes() {
+  dynamicTypesUnavailable.value = false
+  if (!$b24) {
+    return
+  }
+  try {
+    const response = await $b24.callMethod('crm.type.list', {})
+    const types = (response.getData().result?.types ?? []) as Array<{ entityTypeId?: number, title?: string }>
+    dynamicTypeItems.value = types
+      // Only the user smart-process range (>= 128): crm.type.list also returns SYSTEM factory
+      // types below it — the invoice (31, already a static option above) and, on portals with
+      // documents/КЭДО, SmartDocument (36) / SmartB2eDocument (39), whose cards our resolver
+      // does not route. Offering one would sell a type whose «открыть»/«создать» is dead —
+      // the exact class issue #26 exists to kill.
+      .filter(item => typeof item.entityTypeId === 'number' && item.entityTypeId >= DYNAMIC_TYPE_MIN)
+      .map(item => ({ label: String(item.title ?? item.entityTypeId), value: item.entityTypeId as number }))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
+  } catch {
+    dynamicTypesUnavailable.value = true
+  }
+}
 // endregion ////
 
 // region Pickers ////
@@ -422,6 +467,9 @@ onMounted(async () => {
     // After loadData, so the lookups see the loaded config; awaited so the admin does not get a
     // free-text input that turns into a select under their cursor.
     await loadUfFields()
+    // Not awaited into the critical path deliberately: the CRM-type select is usable with its
+    // three static options while smart processes are still being enumerated (or refused).
+    void loadCrmTypes()
     if (ufSmartLink.value.target.entityMode === 'lists') {
       await loadLists()
       // A saved group/project list can never be in the enumeration — reopening such a config
@@ -495,6 +543,7 @@ onUnmounted(() => {
       <B24FormField
         v-if="ufSmartLink.target.entityMode === 'crm'"
         :label="$t('page.app-options.form.crmType.label')"
+        :help="dynamicTypesUnavailable ? $t('page.app-options.form.crmType.dynamicUnavailable') : undefined"
         :error="shownErrors.entityTypeId"
         required
       >

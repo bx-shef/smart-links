@@ -1,6 +1,7 @@
 import type { B24Frame, TypeEnumAppStatus } from '@bitrix24/b24jssdk'
 import type { UfSmartLinkType } from '#shared/types/base'
-import { EnumCrmEntityTypeId, Type } from '@bitrix24/b24jssdk'
+import { Type } from '@bitrix24/b24jssdk'
+import { crmNewTargetPath, crmTargetPathTemplate } from '~/utils/crmTargetPath'
 
 /**
  * Some info about App
@@ -30,9 +31,9 @@ export const useAppSettingsStore = defineStore(
      */
     const getTargetPath = (entityTypeId: number, entityMode: string) => {
       if (entityMode === 'crm') {
-        switch (entityTypeId) {
-          case EnumCrmEntityTypeId.deal: return `/crm/deal/details/#entityId#/`
-        }
+        // Lead/deal named routes, smart invoice + smart processes via the universal
+        // /crm/type/ route — the scheme and its limits live in app/utils/crmTargetPath.ts.
+        return crmTargetPathTemplate(entityTypeId)
       } else if(entityMode === 'lists') {
         return `/services/lists/${entityTypeId}/element/0/#entityId#/`
       }
@@ -42,9 +43,7 @@ export const useAppSettingsStore = defineStore(
 
     const getNewTargetPath = (entityTypeId: number, entityMode: string) => {
       if (entityMode === 'crm') {
-        switch (entityTypeId) {
-          case EnumCrmEntityTypeId.deal: return `/crm/deal/details/0/`
-        }
+        return crmNewTargetPath(entityTypeId)
       } else if(entityMode === 'lists') {
         return `/services/lists/${entityTypeId}/element/0/0/`
       }

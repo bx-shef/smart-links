@@ -416,6 +416,13 @@ async function makeOpenLink() {
   }
 
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', link.id.toString())
+  if (!url) {
+    // An unrouted type resolves to '' — and '' through slider.getUrl is the PORTAL ROOT, so
+    // without this guard the click opens the portal's front page in a slider: a live-looking
+    // button into the wrong place. Unreachable through the editor, reachable через a stale or
+    // hand-edited config; a silent no-op matches the disabled-action doctrine.
+    return
+  }
   const path = $b24.slider.getUrl(url)
 
   if (isListsTarget()) {
@@ -437,7 +444,11 @@ async function addNewEntity() {
 
   // No '#entityId#' replace here: getNewTargetPath returns a complete creation path with no
   // marker — only getTargetPath carries one.
-  const path = $b24.slider.getUrl(appSettings.getNewTargetPath(link.entityTypeId, link.entityMode))
+  const newUrl = appSettings.getNewTargetPath(link.entityTypeId, link.entityMode)
+  if (!newUrl) {
+    return // unrouted type — see makeOpenLink: '' would open the portal root in a slider
+  }
+  const path = $b24.slider.getUrl(newUrl)
   /**
    * @todo write proper param substitution / prefill here
    */
@@ -494,6 +505,9 @@ async function makeOpenLinkById(entity: EntityItem) {
   }
 
   const url = appSettings.getTargetPath(link.entityTypeId, link.entityMode).replace('#entityId#', entity.id.toString())
+  if (!url) {
+    return // unrouted type — see makeOpenLink
+  }
   const path = $b24.slider.getUrl(url)
 
   if (isListsTarget()) {
