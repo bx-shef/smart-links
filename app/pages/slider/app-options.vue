@@ -7,7 +7,7 @@ import { usePageStore } from '~/stores/page'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
 import { DEFAULT_IBLOCK_TYPE_ID, ENUMERABLE_IBLOCK_TYPES, resolveIblockTypeId } from '~/utils/listsTarget'
-import { SMART_INVOICE_TYPE_ID } from '~/utils/crmTargetPath'
+import { DYNAMIC_TYPE_MIN, SMART_INVOICE_TYPE_ID } from '~/utils/crmTargetPath'
 import CloudErrorIcon from '@bitrix24/b24icons-vue/main/CloudErrorIcon'
 
 definePageMeta({
@@ -70,12 +70,24 @@ const entityModeItems = computed(() => [
 // the three static types and says why the rest are missing.
 const dynamicTypeItems = ref<{ label: string, value: number }[]>([])
 const dynamicTypesUnavailable = ref(false)
-const crmTypeItems = computed(() => [
-  { label: t('page.app-options.form.crmType.lead'), value: 1 },
-  { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal },
-  { label: t('page.app-options.form.crmType.invoice'), value: SMART_INVOICE_TYPE_ID },
-  ...dynamicTypeItems.value
-])
+const crmTypeItems = computed(() => {
+  const items = [
+    { label: t('page.app-options.form.crmType.lead'), value: 1 },
+    { label: t('page.app-options.form.crmType.deal'), value: EnumCrmEntityTypeId.deal },
+    { label: t('page.app-options.form.crmType.invoice'), value: SMART_INVOICE_TYPE_ID },
+    ...dynamicTypeItems.value
+  ]
+  // The lists-branch lesson, applied here too: a saved smart process ABSENT from the enumeration
+  // (still loading, plan downgraded, rights) must not render as a naked «1256» over a working
+  // config — b24ui shows the raw value when no item matches, and the help text right under it
+  // would then invite the admin to «fix» a setting that is not broken. A named placeholder keeps
+  // the saved value selectable and honest in both windows.
+  const saved = Number(ufSmartLink.value.target.entityTypeId)
+  if (saved >= DYNAMIC_TYPE_MIN && !dynamicTypeItems.value.some(item => item.value === saved)) {
+    items.push({ label: t('page.app-options.form.crmType.savedProcess', { id: saved }), value: saved })
+  }
+  return items
+})
 
 async function loadCrmTypes() {
   dynamicTypesUnavailable.value = false
@@ -86,9 +98,12 @@ async function loadCrmTypes() {
     const response = await $b24.callMethod('crm.type.list', {})
     const types = (response.getData().result?.types ?? []) as Array<{ entityTypeId?: number, title?: string }>
     dynamicTypeItems.value = types
-      // The smart invoice comes back from the enumeration too — it is already a static option
-      // above, and two rows for one type read as a choice that isn't one.
-      .filter(item => typeof item.entityTypeId === 'number' && item.entityTypeId !== SMART_INVOICE_TYPE_ID)
+      // Only the user smart-process range (>= 128): crm.type.list also returns SYSTEM factory
+      // types below it — the invoice (31, already a static option above) and, on portals with
+      // documents/КЭДО, SmartDocument (36) / SmartB2eDocument (39), whose cards our resolver
+      // does not route. Offering one would sell a type whose «открыть»/«создать» is dead —
+      // the exact class issue #26 exists to kill.
+      .filter(item => typeof item.entityTypeId === 'number' && item.entityTypeId >= DYNAMIC_TYPE_MIN)
       .map(item => ({ label: String(item.title ?? item.entityTypeId), value: item.entityTypeId as number }))
       .sort((a, b) => a.label.localeCompare(b.label, 'ru'))
   } catch {
