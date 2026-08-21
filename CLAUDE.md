@@ -1,6 +1,6 @@
 # SmartLinks
 
-> Last reviewed: 2026-07-29
+> Last reviewed: 2026-08-21
 
 Bitrix24-приложение «Умные ссылки». Издатель ИП Шевчик И.С. Nuxt 4 + Nitro: один процесс отдаёт
 публичные страницы (`/`, `/privacy`), in-portal-страницы (`/app`, `/install`, `/handler/…`, `/slider/…`) и
@@ -194,7 +194,12 @@ pnpm translate-ui # оффлайн-перевод локалей (нужен DEE
   используются только в стабах `runtime/vue` и `runtime/inertia`.
 - **Без обратного прокси приложение само вешает edge-защиту** — флаг `APP_EDGE_SECURITY=1`
   (`server/utils/edgeSecurity.ts` + `plugins/edgeHeaders.ts`): CSP с `frame-ancestors` доменов Б24,
-  `nosniff`, `Referrer-Policy`, HSTS на **все** ответы + кап тела запроса. Заголовки вешает
+  `nosniff`, `Referrer-Policy`, HSTS на **все** ответы + кап тела запроса + таймауты запроса
+  (`plugins/edgeTimeouts.ts`: простой сокета режется только **во время приёма** — тишина ожидания
+  медленного обработчика легальна, а после ответа сокет возвращается под таймер, иначе свой
+  `timeout`-листнер глушил бы и кип-элайв-жатву Node — дыра эталонного порта, у нас закрыта и
+  закреплена живым тестом `tests/edgeTimeoutsLive.test.ts`).
+  Заголовки вешает
   **плагин** на хук `beforeResponse`, а не middleware: Nitro отдаёт пререндеренные страницы
   обработчиком public-assets **до** middleware, и HTML уходил бы вообще без CSP (проверено).
   За прокси флаг **не** ставим — два CSP браузер пересекает рестриктивно.

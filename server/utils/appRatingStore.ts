@@ -1,4 +1,5 @@
 import type { QueryFn } from '../db/query'
+import { parseDbDate } from './tokenStore'
 import type { AppRatingState } from './appRatingPolicy'
 
 // Per-portal app-rating state over an injected QueryFn (testable without a DB). Keyed by
@@ -6,10 +7,16 @@ import type { AppRatingState } from './appRatingPolicy'
 // generic TEXT so the key source can change without a schema migration. All writes are UPSERTs so
 // a portal with no row yet is handled transparently. Adapted from ai-price-import.
 
+/** Rating state plus when this portal was first seen (the row's created_at) — the fallback
+ *  install-age anchor for portals with no portal_tokens row. */
+export interface AppRatingStateRow extends AppRatingState {
+  firstSeenAt: Date | null
+}
+
 /** Read the rating state for a portal, or null when there is no row yet. */
-export async function getRatingState(portalKey: string, query: QueryFn): Promise<AppRatingState | null> {
+export async function getRatingState(portalKey: string, query: QueryFn): Promise<AppRatingStateRow | null> {
   const { rows } = await query(
-    'SELECT prompted_at, opened_at, reviewed FROM app_rating WHERE portal_key=$1',
+    'SELECT prompted_at, opened_at, reviewed, created_at FROM app_rating WHERE portal_key=$1',
     [portalKey]
   )
   const r = rows[0]
@@ -17,11 +24,28 @@ export async function getRatingState(portalKey: string, query: QueryFn): Promise
     return null
   }
   // pg returns TIMESTAMPTZ as a Date by default; accept a string too (fakes/other drivers).
+  // parseDbDate nulls out garbage — an Invalid Date is truthy and would slip through the
+  // install-age gate in the dangerous direction.
   return {
-    promptedAt: r.prompted_at ? new Date(r.prompted_at as string | Date) : null,
-    openedAt: r.opened_at ? new Date(r.opened_at as string | Date) : null,
-    reviewed: r.reviewed === true
+    promptedAt: parseDbDate(r.prompted_at),
+    openedAt: parseDbDate(r.opened_at),
+    reviewed: r.reviewed === true,
+    firstSeenAt: parseDbDate(r.created_at)
   }
+}
+
+/**
+ * Create the portal's rating row on first sighting, changing nothing else (DO NOTHING on
+ * conflict). This is what starts the install-age clock for a portal that has no portal_tokens row
+ * (host-keyed, pre-OAuth deployments): without it «unknown age → too early» would silence the
+ * prompt forever — the row is only otherwise created by markPrompted, which never runs while the
+ * policy answers false.
+ */
+export async function touchFirstSeen(portalKey: string, query: QueryFn): Promise<void> {
+  await query(
+    'INSERT INTO app_rating (portal_key) VALUES ($1) ON CONFLICT (portal_key) DO NOTHING',
+    [portalKey]
+  )
 }
 
 /** Stamp prompted_at = now() (the modal was actually shown). Upserts the row. Never touches a

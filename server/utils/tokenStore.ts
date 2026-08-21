@@ -173,6 +173,31 @@ export async function getPortalToken(memberId: string, query: QueryFn): Promise<
 }
 
 /**
+ * When this portal's registration row was created — the install-age anchor for the rating prompt.
+ * `created_at` is deliberately never touched by the token UPSERT, so it survives refreshes and
+ * re-delivered install events; uninstall deletes the row, so a returning portal starts anew.
+ * Null when the key is not a registered member_id (host-keyed portals have no row here).
+ */
+export async function installCreatedAt(memberId: string, query: QueryFn): Promise<Date | null> {
+  const { rows } = await query(
+    'SELECT created_at FROM portal_tokens WHERE member_id=$1',
+    [memberId]
+  )
+  const raw = rows[0]?.created_at
+  return parseDbDate(raw)
+}
+
+/** Parse a driver-supplied timestamp; garbage reads as «unknown», never as an Invalid Date —
+ *  downstream the age gate must treat unknown as «too early», and Invalid Date is truthy. */
+export function parseDbDate(raw: unknown): Date | null {
+  if (!raw) {
+    return null
+  }
+  const d = new Date(raw as string | Date)
+  return Number.isNaN(d.getTime()) ? null : d
+}
+
+/**
  * Resolve an installed portal's member_id from its (already verified) host.
  *
  * Returns null when the host is not installed — the caller must NOT invent a key from the host in

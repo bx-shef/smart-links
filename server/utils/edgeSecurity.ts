@@ -150,3 +150,131 @@ export function edgeBodyGuard(contentLength: string | undefined, transferEncodin
   if (chunked && declared === null) return 411
   return null
 }
+
+// ── Request-time limits: the no-nginx analog of client_header_timeout / client_body_timeout ──────
+// (ported from the reference app, its #322)
+//
+// Without a reverse proxy only Node's defaults apply: requestTimeout 300s (total), headersTimeout
+// 60s — and NO idle bound, so a drip-feed body (1 byte / 30s) holds a socket for the full 300s at
+// near-zero cost to the attacker (slowloris by body). A hundred such POSTs is a hundred sockets
+// pinned for five minutes each on the single process serving every portal.
+//
+// The compensation mirrors nginx semantics, applied to the Node http.Server when APP_EDGE_SECURITY=1:
+//  - socket idle (server.timeout) ← client_body_timeout: cuts a connection that sent NOTHING for
+//    the window. An honest client on a bad channel keeps trickling bytes and is never idle-cut.
+//    ⚠ `server.timeout` counts inactivity in BOTH directions, while the client-idle rule applies
+//    only WHILE RECEIVING. Our slowest handlers legitimately wait on an outbound REST call to the
+//    portal (frame-token verification) with nothing on the wire — so Node's default
+//    destroy-on-timeout is replaced by our own 'timeout' listener (attaching one disables the
+//    default destroy) that kills the socket ONLY while the current request is still being received
+//    (`shouldCutOnIdle`); after the body is fully in, the wait is the server's own slowness and is
+//    bounded by the handler's budgets, not by the client-idle rule.
+//  - requestTimeout stays as the TOTAL ceiling (Node's own default, made explicit + tunable): even
+//    a never-idle drip is bounded. ⚠ Node enforces it on a periodic connections check, so the cut
+//    lands up to a couple of intervals past the deadline — the bound is «total + minutes», not exact
+//    (the reference verified this live on the built server).
+//  - headersTimeout ← client_header_timeout.
+// Behind a proxy (flag off, the default) none of this is applied — the proxy already owns these
+// bounds, and a second layer here would only add a knob that can silently disagree with its config.
+const EDGE_TIMEOUT_DEFAULTS = { socketIdleMs: 60_000, headersTimeoutMs: 60_000, requestTimeoutMs: 300_000 }
+
+/** Clamp an env override into a sane band: below 5s cuts honest clients mid-handshake, above 1h is
+ *  no protection at all. Absent/invalid env → the default. */
+function timeoutFromEnv(raw: string | undefined, fallback: number): number {
+  const n = Number((raw ?? '').trim())
+  if (!Number.isFinite(n) || n <= 0) return fallback
+  return Math.min(Math.max(n, 5_000), 3_600_000)
+}
+
+/** Resolved edge timeouts (ms) from env, with nginx-parity defaults. Pure → unit-tested. */
+export function edgeTimeouts(env: Record<string, string | undefined>): { socketIdleMs: number, headersTimeoutMs: number, requestTimeoutMs: number } {
+  return {
+    socketIdleMs: timeoutFromEnv(env.EDGE_SOCKET_IDLE_MS, EDGE_TIMEOUT_DEFAULTS.socketIdleMs),
+    headersTimeoutMs: timeoutFromEnv(env.EDGE_HEADERS_TIMEOUT_MS, EDGE_TIMEOUT_DEFAULTS.headersTimeoutMs),
+    requestTimeoutMs: timeoutFromEnv(env.EDGE_REQUEST_TIMEOUT_MS, EDGE_TIMEOUT_DEFAULTS.requestTimeoutMs)
+  }
+}
+
+/** Minimal shape of node:http Server this module needs (keeps the util import-free and testable). */
+export interface TimeoutServer {
+  timeout: number
+  headersTimeout: number
+  requestTimeout: number
+  setTimeout: (ms: number, listener?: (socket: IdleSocket) => void) => unknown
+  on: (event: 'request', listener: (req: IncomingRequest, res: OutgoingResponse) => void) => unknown
+}
+
+/** The slivers of net.Socket / http.IncomingMessage this module reads (testable with plain objects). */
+export interface IdleSocket { destroy: () => void }
+export interface IncomingRequest {
+  socket: IdleSocket & { edgeReceiving?: boolean, setTimeout?: (ms: number) => unknown }
+  headers: Record<string, string | string[] | undefined>
+  readableEnded?: boolean
+  on: (event: 'end' | 'close', listener: () => void) => unknown
+}
+export interface OutgoingResponse {
+  on: (event: 'close', listener: () => void) => unknown
+}
+
+/** True when an idle socket must be destroyed: the request is still BEING RECEIVED (headers/body in
+ *  flight — the slowloris window). Once the body is fully in, client silence is normal (the client
+ *  is waiting for the handler, e.g. an outbound frame-token check) and must not be cut. Undefined
+ *  marker (no request seen on this socket yet — pre-request idle) also cuts: nothing legit idles
+ *  before sending a request. */
+export function shouldCutOnIdle(receiving: boolean | undefined): boolean {
+  return receiving !== false
+}
+
+/** Apply the resolved timeouts to a live http.Server. The plugin gates the whole call to once (the
+ *  listeners must not stack). `setTimeout` with OUR listener replaces Node's default destroy-on-idle:
+ *  we cut only sockets whose current request is still being received (see the module rationale).
+ *
+ *  ⚠ Two divergences from the reference port, both closing live-reproduced holes in it:
+ *  1. The marker returns to «no request» when the RESPONSE closes. Left at `false`, the socket was
+ *     spared FOREVER: any server-level 'timeout' listener suppresses Node's default destroy for
+ *     EVERY socket timeout on that server — including keep-alive reaping — and the spared one-shot
+ *     timer never re-arms without traffic. An attacker completing one cheap GET per connection then
+ *     going silent pinned sockets until restart — a cheaper slowloris than the one this module
+ *     exists to stop.
+ *  2. The per-request listener re-arms the socket's own idle timer. `server.setTimeout()` alone
+ *     arms timers only for sockets that CONNECT after it runs — sockets already open (including the
+ *     very socket whose first request triggers the plugin) would never get an idle timer for the
+ *     in-flight request. */
+export function applyEdgeTimeouts(server: TimeoutServer, t: ReturnType<typeof edgeTimeouts>): void {
+  server.on('request', (req, res) => {
+    // Divergence 2: arm this socket's idle timer explicitly — see the docblock.
+    req.socket.setTimeout?.(t.socketIdleMs)
+    req.socket.edgeReceiving = true
+    const received = () => {
+      req.socket.edgeReceiving = false
+    }
+    // A bodyless request (no Content-Length — or an explicit zero — and no Transfer-Encoding: the
+    // typical GET) is fully received the moment its headers are in. Waiting for the stream's 'end'
+    // would hang the marker: 'end' only fires once somebody READS the (empty) stream, and handlers
+    // don't read GET bodies.
+    const declaredLength = req.headers['content-length']
+    if (
+      req.readableEnded
+      || declaredLength === '0'
+      || (!declaredLength && !req.headers['transfer-encoding'])
+    ) {
+      received()
+    } else {
+      req.on('end', received) // body fully received → handler time, no idle cut
+      req.on('close', received) // aborted/errored request must not leave the socket marked forever
+    }
+    // Divergence 1: once the response is done there is no active request on this socket — return
+    // the marker to «no request seen» so idle silence cuts again (keep-alive reaping restored; the
+    // next request on the socket re-marks it at its own 'request' event).
+    res.on('close', () => {
+      req.socket.edgeReceiving = undefined
+    })
+  })
+  server.setTimeout(t.socketIdleMs, (socket: IdleSocket & { edgeReceiving?: boolean }) => {
+    if (shouldCutOnIdle(socket.edgeReceiving)) {
+      socket.destroy()
+    }
+  })
+  server.headersTimeout = t.headersTimeoutMs
+  server.requestTimeout = t.requestTimeoutMs
+}
