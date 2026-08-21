@@ -7,7 +7,9 @@ import AppRatingModal from '~/components/AppRatingModal.vue'
 // through «Позже» — lives in the template/emit layer, invisible to the unit project: a drift
 // between the × path and the «Позже» button would split what the server's throttle counts as one
 // intent. B24Modal TELEPORTS its body (and needs the B24App overlay context), so these tests
-// assert at the component boundary — props in, emits out — not on document.body.
+// assert at the component boundary — props in, emits out — not on document.body. The one
+// exception is the footer-buttons test: it stubs the modal SHELL to a slot-renderer so the real
+// B24Buttons become reachable — that stubs the chrome, not the component under test.
 describe('AppRatingModal', () => {
   it('passes the locale texts into the modal chrome', async () => {
     const w = await mountSuspended(AppRatingModal, { props: { open: true } })
@@ -32,5 +34,25 @@ describe('AppRatingModal', () => {
     modal.vm.$emit('update:open', true)
     expect(w.emitted('update:open')).toEqual([[true]])
     expect(w.emitted('later')).toBeUndefined()
+  })
+
+  it('each footer button fires its own emit — a swapped pair would silently miscount intent', async () => {
+    // «rate» vs «reviewed» matter to the SERVER differently: a click on «Оценить» that lands as
+    // «уже оценил» would silence the popup forever for that portal.
+    const w = await mountSuspended(AppRatingModal, {
+      props: { open: true },
+      global: { stubs: { B24Modal: { template: '<div><slot name="footer" /></div>' } } }
+    })
+    const click = async (label: string) => {
+      const btn = w.findAll('button').find(b => b.text().includes(label))
+      expect(btn, `button "${label}" not rendered`).toBeDefined()
+      await btn!.trigger('click')
+    }
+    await click('Оценить в Маркете')
+    await click('Уже оценил(а)')
+    await click('Позже')
+    expect(w.emitted('rate')).toHaveLength(1)
+    expect(w.emitted('reviewed')).toHaveLength(1)
+    expect(w.emitted('later')).toHaveLength(1)
   })
 })

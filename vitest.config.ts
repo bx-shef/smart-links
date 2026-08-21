@@ -6,8 +6,10 @@ import { defineVitestProject } from '@nuxt/test-utils/config'
 //  - `unit`: pure functions in app/utils + server/utils, node env, no Nuxt runtime.
 //  - `nuxt`: components/pages via @nuxt/test-utils + happy-dom (tests/nuxt/**).
 //
-// ⚠ @nuxt/test-utils is PINNED to 4.0.x (package.json): 4.1 pulls h3 v2-rc while Nuxt 4 lives on
-// h3 v1 — the reference hit that exact break.
+// ⚠ @nuxt/test-utils is PINNED to 4.0.x (package.json): 4.1 moves onto h3 v2-rc while Nuxt 4
+// lives on h3 v1 — the reference hit that exact break. (4.0.x itself also ships h3 v2-rc, but
+// under the `h3-next` ALIAS next to a real h3 v1 — the app's own h3 stays v1, which is the
+// isolation the pin protects.)
 export default defineConfig(async () => ({
   test: {
     projects: [

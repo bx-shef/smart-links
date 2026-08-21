@@ -35,7 +35,7 @@ const WIDTH = widthArg === -1 ? 375 : Number(args[widthArg + 1]) || 375
 // expression `widthArg + 1` is 0, and the first passed route silently fell out of the list
 // (a real bug the reference shipped and fixed).
 const routes = args.filter((a, i) => a.startsWith('/') && (widthArg === -1 || i !== widthArg + 1))
-const ROUTES = routes.length ? routes : ['/app', '/handler/uf.smart-link', '/slider/app-options', '/slider/feedback']
+const ROUTES = routes.length ? routes : ['/app', '/install', '/handler/uf.smart-link', '/slider/app-options', '/slider/feedback']
 
 const server = createServer(async (req, res) => {
   // The traversal lock is the shared pure function (scripts/lib/staticPath.mjs), guarded by

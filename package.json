@@ -18,6 +18,7 @@
     "lint:fix": "eslint --fix .",
     "typecheck": "nuxt prepare && vue-tsc --noEmit -p .nuxt/tsconfig.json && vue-tsc --noEmit -p .nuxt/tsconfig.server.json",
     "test": "vitest run",
+    "test:unit": "vitest run --project unit",
     "b24:smoke": "node scripts/b24-smoke.mjs",
     "screenshot": "node scripts/screenshot.mjs",
     "probe:overflow": "node scripts/probe-overflow.mjs",

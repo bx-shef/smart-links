@@ -64,4 +64,14 @@ describe('local file servers in scripts/ use the shared lock', () => {
       expect(src.includes('resolveSafePath('), `${f} serves files without the shared lock`).toBe(true)
     }
   })
+
+  it('every one of them listens on loopback only', () => {
+    // Without a host Node binds 0.0.0.0: for the run's duration the port serves any file the
+    // process can read to anything that can reach the machine (a sibling container, another CI
+    // job). An ephemeral unprinted port is obscurity, not protection.
+    for (const f of servers) {
+      const src = strip(readFileSync(resolve(SCRIPTS, f), 'utf8'))
+      expect(/\.listen\(\s*0\s*,\s*'127\.0\.0\.1'/.test(src), `${f} listens beyond loopback`).toBe(true)
+    }
+  })
 })
