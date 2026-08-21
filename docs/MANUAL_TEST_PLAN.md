@@ -254,8 +254,10 @@ console.log(
 `RATING_MIN_INSTALL_AGE_DAYS` от установки (у OAuth-портала — от `portal_tokens.created_at`, у
 портала без OAuth-строки — от первого открытия `/app`, строка `app_rating` заводится сама). Чтобы
 проверить попап, не выжидая 4 дня, отодвиньте якорь назад:
-`UPDATE portal_tokens SET created_at = now() - interval '5 days';` (и то же для
-`app_rating.created_at`, если портал без OAuth-строки).
+`UPDATE portal_tokens SET created_at = now() - interval '5 days' WHERE domain = '<хост портала>';`
+(и то же для `app_rating` с `WHERE portal_key = '<хост>'`, если портал без OAuth-строки).
+⚠ `WHERE` обязателен: одна база держит строки всех порталов, и запрос без него перемотал бы
+якорь каждому.
 
 - [ ] Задан `NUXT_PUBLIC_B24_MARKET_CODE`, установка старше 4 суток (или якорь отодвинут запросом
       выше), открыть `/app` из меню приложений портала → попап появляется. 📷

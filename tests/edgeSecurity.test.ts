@@ -185,22 +185,25 @@ describe('edgeTimeouts (no-proxy analog of client_body/header_timeout, reference
       requestTimeout: 0,
       idleMs: 0,
       onTimeout: undefined as ((s: { destroy: () => void, edgeReceiving?: boolean }) => void) | undefined,
-      onRequest: undefined as ((req: FakeReq) => void) | undefined,
+      onRequest: undefined as ((req: FakeReq, res: FakeRes) => void) | undefined,
       setTimeout(ms: number, listener?: (s: { destroy: () => void, edgeReceiving?: boolean }) => void) {
         srv.idleMs = ms
         srv.onTimeout = listener
       },
-      on(_event: 'request', listener: (req: FakeReq) => void) {
+      on(_event: 'request', listener: (req: FakeReq, res: FakeRes) => void) {
         srv.onRequest = listener
       }
     }
     return srv
   }
   interface FakeReq {
-    socket: { destroy: () => void, destroyed?: boolean, edgeReceiving?: boolean }
+    socket: { destroy: () => void, destroyed?: boolean, edgeReceiving?: boolean, setTimeout?: (ms: number) => unknown, armedMs?: number }
     headers: Record<string, string | string[] | undefined>
     readableEnded?: boolean
     on: (event: 'end' | 'close', listener: () => void) => unknown
+  }
+  interface FakeRes {
+    on: (event: 'close', listener: () => void) => unknown
   }
   function fakeReq(headers: Record<string, string> = { 'content-length': '1000' }): FakeReq & { fire: (e: 'end' | 'close') => void } {
     const listeners: Record<string, () => void> = {}
@@ -209,7 +212,11 @@ describe('edgeTimeouts (no-proxy analog of client_body/header_timeout, reference
       destroy() {
         socket.destroyed = true
       },
-      edgeReceiving: undefined as boolean | undefined
+      edgeReceiving: undefined as boolean | undefined,
+      armedMs: 0,
+      setTimeout(ms: number) {
+        socket.armedMs = ms
+      }
     }
     return {
       socket,
@@ -219,13 +226,25 @@ describe('edgeTimeouts (no-proxy analog of client_body/header_timeout, reference
       fire(event) { listeners[event]?.() }
     }
   }
+  function fakeRes(): FakeRes & { finish: () => void } {
+    const listeners: Record<string, () => void> = {}
+    return {
+      on(event, listener) { listeners[event] = listener },
+      finish() { listeners['close']?.() }
+    }
+  }
 
-  it('applyEdgeTimeouts sets all three values; idle goes through setTimeout (covers already-open sockets)', () => {
+  it('applyEdgeTimeouts sets all three values and re-arms the idle timer per request', () => {
     const srv = fakeServer()
     applyEdgeTimeouts(srv, { socketIdleMs: 60_000, headersTimeoutMs: 61_000, requestTimeoutMs: 300_000 })
     expect(srv.idleMs).toBe(60_000)
     expect(srv.headersTimeout).toBe(61_000)
     expect(srv.requestTimeout).toBe(300_000)
+    // server.setTimeout arms timers only for sockets that connect AFTER it runs — a socket already
+    // open when the plugin applies gets its idle timer from its next request instead.
+    const req = fakeReq()
+    srv.onRequest!(req, fakeRes())
+    expect(req.socket.armedMs).toBe(60_000)
   })
 
   // The load-bearing subtlety: the client-idle rule applies only WHILE RECEIVING, while Node's
@@ -237,20 +256,20 @@ describe('edgeTimeouts (no-proxy analog of client_body/header_timeout, reference
 
     // request arrived, body still in flight → timeout destroys
     const rec = fakeReq()
-    srv.onRequest!(rec)
+    srv.onRequest!(rec, fakeRes())
     srv.onTimeout!(rec.socket)
     expect(rec.socket.destroyed).toBe(true)
 
     // body fully received ('end') → the same idle window spares the socket (handler is working)
     const done = fakeReq()
-    srv.onRequest!(done)
+    srv.onRequest!(done, fakeRes())
     done.fire('end')
     srv.onTimeout!(done.socket)
     expect(done.socket.destroyed).toBe(false)
 
     // aborted request ('close') must not leave the socket marked as receiving forever
     const aborted = fakeReq()
-    srv.onRequest!(aborted)
+    srv.onRequest!(aborted, fakeRes())
     aborted.fire('close')
     srv.onTimeout!(aborted.socket)
     expect(aborted.socket.destroyed).toBe(false)
@@ -258,9 +277,16 @@ describe('edgeTimeouts (no-proxy analog of client_body/header_timeout, reference
     // bodyless GET (no content-length/transfer-encoding): received the moment headers are in —
     // its (empty) stream is never read, 'end' never fires, so the marker must not wait for it
     const get = fakeReq({})
-    srv.onRequest!(get)
+    srv.onRequest!(get, fakeRes())
     srv.onTimeout!(get.socket)
     expect(get.socket.destroyed).toBe(false)
+
+    // an explicit Content-Length: 0 is as bodyless as a GET — its empty stream is never read, so
+    // the marker must not wait for 'end' (a >60s handler wait would otherwise get cut)
+    const zero = fakeReq({ 'content-length': '0' })
+    srv.onRequest!(zero, fakeRes())
+    srv.onTimeout!(zero.socket)
+    expect(zero.socket.destroyed).toBe(false)
 
     // a socket that never presented a request idles for nothing legit → cut
     const silent = {
@@ -271,6 +297,33 @@ describe('edgeTimeouts (no-proxy analog of client_body/header_timeout, reference
     }
     srv.onTimeout!(silent)
     expect(silent.destroyed).toBe(true)
+  })
+
+  // The hole the reference port shipped with (reproduced live on node:http): our 'timeout'
+  // listener suppresses Node's default destroy for EVERY socket timeout — including keep-alive
+  // reaping — and a marker left at `false` spared the socket forever. One cheap completed GET per
+  // connection then silence pinned sockets until restart: a cheaper slowloris than the one the
+  // module exists to stop.
+  it('a completed response returns the socket to «no request» — keep-alive silence is cut again', () => {
+    const srv = fakeServer()
+    applyEdgeTimeouts(srv, { socketIdleMs: 60_000, headersTimeoutMs: 60_000, requestTimeoutMs: 300_000 })
+
+    const req = fakeReq()
+    const res = fakeRes()
+    srv.onRequest!(req, res)
+    req.fire('end') // body in → spared while the handler works
+    srv.onTimeout!(req.socket)
+    expect(req.socket.destroyed).toBe(false)
+
+    res.finish() // response done → no active request on this socket
+    srv.onTimeout!(req.socket)
+    expect(req.socket.destroyed).toBe(true)
+
+    // …and a NEW request on the same socket marks it live again
+    const again = fakeReq()
+    again.socket.destroyed = false
+    srv.onRequest!(again, fakeRes())
+    expect(again.socket.edgeReceiving).toBe(true)
   })
 
   it('shouldCutOnIdle: cuts «receiving» and «no request yet», spares «body received»', () => {

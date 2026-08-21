@@ -7,9 +7,12 @@ import { applyEdgeTimeouts, edgeSecurityEnabled, edgeTimeouts } from '../utils/e
 // ported from the reference app, its #322).
 //
 // Nitro never hands plugins the http.Server directly, so it is grabbed from the FIRST request's
-// socket (`req.socket.server`) — one flag makes that once-only. The window before the first
-// request needs no protection: with zero requests there are no attacker-held request sockets yet,
-// and `server.setTimeout` also covers connections that are already open when it runs.
+// socket (`req.socket.server`) — one flag makes that once-only. `server.setTimeout` arms idle
+// timers only for sockets that connect AFTER it runs, so applyEdgeTimeouts additionally re-arms
+// the timer per request — sockets already open when the plugin applies (including the one carrying
+// the triggering request) get their timer from their next 'request' event. The window before the
+// first request needs no protection: with zero requests there are no attacker-held request sockets
+// yet, and the header phase is always bounded by headersTimeout.
 //
 // Behind a proxy (flag off, the default) this is a no-op: the proxy already bounds header/body
 // time, and a second layer here would only add a knob that can silently disagree with its config.
