@@ -64,7 +64,12 @@ export function shouldPrompt(state: AppRatingState | null, now: Date, opts: Shou
   if (!opts.installedAt) {
     return false
   }
-  if (now.getTime() - opts.installedAt.getTime() < ageDays * DAY_MS) {
+  // Written as «prompt only when PROVABLY old enough», not «suppress when young»: an Invalid Date
+  // makes the difference NaN, and `NaN < threshold` is false — the young-check form would fail
+  // OPEN and prompt immediately, the exact asymmetry this gate exists to prevent. The parse
+  // points also null out garbage dates; this is the second belt.
+  const ageMs = now.getTime() - opts.installedAt.getTime()
+  if (!(ageMs >= ageDays * DAY_MS)) {
     return false
   }
   if (!state) {

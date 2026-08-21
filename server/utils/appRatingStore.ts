@@ -1,4 +1,5 @@
 import type { QueryFn } from '../db/query'
+import { parseDbDate } from './tokenStore'
 import type { AppRatingState } from './appRatingPolicy'
 
 // Per-portal app-rating state over an injected QueryFn (testable without a DB). Keyed by
@@ -23,11 +24,13 @@ export async function getRatingState(portalKey: string, query: QueryFn): Promise
     return null
   }
   // pg returns TIMESTAMPTZ as a Date by default; accept a string too (fakes/other drivers).
+  // parseDbDate nulls out garbage — an Invalid Date is truthy and would slip through the
+  // install-age gate in the dangerous direction.
   return {
-    promptedAt: r.prompted_at ? new Date(r.prompted_at as string | Date) : null,
-    openedAt: r.opened_at ? new Date(r.opened_at as string | Date) : null,
+    promptedAt: parseDbDate(r.prompted_at),
+    openedAt: parseDbDate(r.opened_at),
     reviewed: r.reviewed === true,
-    firstSeenAt: r.created_at ? new Date(r.created_at as string | Date) : null
+    firstSeenAt: parseDbDate(r.created_at)
   }
 }
 

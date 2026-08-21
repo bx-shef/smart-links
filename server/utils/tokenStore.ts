@@ -184,7 +184,17 @@ export async function installCreatedAt(memberId: string, query: QueryFn): Promis
     [memberId]
   )
   const raw = rows[0]?.created_at
-  return raw ? new Date(raw as string | Date) : null
+  return parseDbDate(raw)
+}
+
+/** Parse a driver-supplied timestamp; garbage reads as «unknown», never as an Invalid Date —
+ *  downstream the age gate must treat unknown as «too early», and Invalid Date is truthy. */
+export function parseDbDate(raw: unknown): Date | null {
+  if (!raw) {
+    return null
+  }
+  const d = new Date(raw as string | Date)
+  return Number.isNaN(d.getTime()) ? null : d
 }
 
 /**

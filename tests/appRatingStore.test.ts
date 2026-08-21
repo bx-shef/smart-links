@@ -79,11 +79,23 @@ describe('rating mutations', () => {
 
 describe('install-age anchors', () => {
   it('getRatingState carries the row created_at as firstSeenAt', async () => {
-    const { query } = fakeQuery([
+    const { query, calls } = fakeQuery([
       { prompted_at: null, opened_at: null, reviewed: false, created_at: '2026-06-01T00:00:00Z' }
     ])
     const state = await getRatingState('c.bitrix24.by', query)
     expect(state?.firstSeenAt).toBeInstanceOf(Date)
+    // The fake answers preset rows whatever the SQL says — pin the column in the query text, or
+    // dropping it from the SELECT stays green while host-keyed portals lose their age anchor.
+    expect(calls[0]?.sql).toContain('created_at')
+  })
+
+  it('garbage timestamps read as null, never as an Invalid Date', async () => {
+    const { query } = fakeQuery([
+      { prompted_at: 'not a date', opened_at: null, reviewed: false, created_at: 'garbage' }
+    ])
+    const state = await getRatingState('c.bitrix24.by', query)
+    expect(state?.promptedAt).toBeNull()
+    expect(state?.firstSeenAt).toBeNull()
   })
 
   it('a row without created_at yields firstSeenAt null, not an invalid date', async () => {
@@ -108,5 +120,7 @@ describe('install-age anchors', () => {
     expect(hit.calls[0]?.sql).toContain('FROM portal_tokens')
     const miss = fakeQuery([])
     expect(await installCreatedAt('c.bitrix24.by', miss.query)).toBeNull()
+    const garbage = fakeQuery([{ created_at: 'not a date' }])
+    expect(await installCreatedAt('member-1', garbage.query)).toBeNull()
   })
 })

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, it, expect } from 'vitest'
 import {
   shouldPrompt,
@@ -76,10 +78,41 @@ describe('install-age gate (reference #380/#397)', () => {
     expect(shouldPrompt(null, NOW, { installedAt: daysAgo(2), minInstallAgeDays: 3 })).toBe(false)
   })
 
+  it('an Invalid Date reads as «too early», not «go ahead»', () => {
+    // Invalid Date is truthy and its getTime() is NaN: a young-check comparison (`diff < threshold`)
+    // would fail OPEN and prompt immediately. The gate is written as «prompt only when provably
+    // old enough», and the parse points null garbage out — this pins the policy half.
+    expect(shouldPrompt(null, NOW, { installedAt: new Date('not a date') })).toBe(false)
+  })
+
   it('the two four-day constants are independent by design', () => {
     // «не чаще раза в N дней» and «не раньше N суток от установки» mean different things; equal
-    // values today are a coincidence. The named import above is the guard against merging them.
+    // values today are a coincidence. A behavioral test cannot tell the two apart while the values
+    // match, so this is a SOURCE check: each constant must be defined as its own numeric literal —
+    // aliasing one to the other would silently weld the two knobs together.
+    const src = readFileSync(resolve(__dirname, '../server/utils/appRatingPolicy.ts'), 'utf8')
+    expect(src).toMatch(/export const RATING_REPROMPT_DAYS = \d+/)
+    expect(src).toMatch(/export const RATING_MIN_INSTALL_AGE_DAYS = \d+/)
     expect(RATING_MIN_INSTALL_AGE_DAYS).toBeGreaterThan(0)
     expect(RATING_REPROMPT_DAYS).toBeGreaterThan(0)
+  })
+})
+
+// The policy being perfect is not enough: the route wiring has three links whose silent deletion
+// leaves every suite green while the prompt dies for host-keyed portals (same rationale as the
+// wiring guard in tests/loadCoalesce.test.ts).
+describe('wiring: GET /api/app-rating anchors the install age', () => {
+  const src = readFileSync(resolve(__dirname, '../server/api/app-rating.get.ts'), 'utf8')
+
+  it('creates the rating row on first sighting (starts the clock for host-keyed portals)', () => {
+    expect(src).toMatch(/if \(!state\) \{[\s\S]{0,600}?await touchFirstSeen\(portalKey, query\)/)
+  })
+
+  it('prefers the token created_at and falls back to first sighting', () => {
+    expect(src).toMatch(/await installCreatedAt\(portalKey, query\) \?\? state\?\.firstSeenAt \?\? null/)
+  })
+
+  it('feeds the anchor into the policy decision', () => {
+    expect(src).toMatch(/shouldPrompt\(state, new Date\(\), \{ installedAt \}\)/)
   })
 })
