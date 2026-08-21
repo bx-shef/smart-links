@@ -1,6 +1,7 @@
 import { healthInfo } from '~/utils/build'
 import { dbEnabled } from '../db/client'
 import { tokenEncryptionReady } from '../utils/secretCrypto'
+import { keepAliveHealth } from '../utils/keepAliveStatus'
 
 // Public liveness endpoint: GET /api/health. No secrets.
 //
@@ -17,6 +18,10 @@ export default defineEventHandler(() => {
       oauth: Boolean(process.env.B24_CLIENT_ID && process.env.B24_CLIENT_SECRET),
       encryption: tokenEncryptionReady()
     },
+    // Keep-alive outcome flags for the owner's external daily ping: `failing` — the latest pass
+    // threw or left portals unrefreshed; `lostGrant` — latched «a portal needs reinstall» since
+    // process start. Booleans + one timestamp, same no-counting rule as `ready`.
+    keepalive: keepAliveHealth(),
     time: new Date().toISOString()
   }
 })
