@@ -33,7 +33,7 @@ const { $logger, moduleId, initApp, reloadData, b24Helper, destroyB24Helper, use
 const link = useLinkStore()
 const appSettings = useAppSettingsStore()
 const user = useUserStore()
-const { init: initB24Frame } = useB24()
+const { init: initB24Frame, openAppSlider } = useB24()
 let $b24: null | B24Frame = null
 const isSetUfSettings = ref(true)
 const isEditMode = ref(false)
@@ -633,15 +633,16 @@ async function makeUnLink() {
 }
 
 function openSliderAppSettings() {
-  $b24?.slider.openSliderAppPage({
-    place: 'app-options',
-    ufCode: ufCode.value,
-    // The settings slider needs to know which entity this field lives on, otherwise it cannot
-    // offer the entity's own fields to pick from and the admin is back to typing UF_CRM_ codes by
-    // hand. Only the placement knows it — the slider has no other way to find out.
-    sourceEntityTypeId: `${currentEntityTypeId.value}`,
-    bx24_width: 650,
-    bx24_title: t('page.app-options.seo.title'),
+  void openAppSlider('app-options', {
+    width: 650,
+    title: t('page.app-options.seo.title'),
+    params: {
+      ufCode: ufCode.value,
+      // The settings slider needs to know which entity this field lives on, otherwise it cannot
+      // offer the entity's own fields to pick from and the admin is back to typing UF_CRM_ codes
+      // by hand. Only the placement knows it — the slider has no other way to find out.
+      sourceEntityTypeId: `${currentEntityTypeId.value}`
+    }
   })
 }
 

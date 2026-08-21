@@ -56,4 +56,15 @@ CREATE TABLE IF NOT EXISTS portal_tombstone (
   member_id  TEXT PRIMARY KEY,
   deleted_ts BIGINT NOT NULL
 );
+
+-- Keep-alive outcome for /api/health. One row ('keepalive'). Persisted because the target
+-- platform recycles the process: in-memory flags would greet the daily ping pristine-green after
+-- every wake, and the alert this exists for would never fire.
+CREATE TABLE IF NOT EXISTS maintenance_health (
+  id          TEXT PRIMARY KEY,
+  last_run_at TIMESTAMPTZ,
+  failing     BOOLEAN NOT NULL DEFAULT false,
+  lost_grant  BOOLEAN NOT NULL DEFAULT false,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
 `

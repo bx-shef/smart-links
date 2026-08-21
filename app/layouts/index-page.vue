@@ -15,7 +15,7 @@ const page = usePageStore()
 usePageSeo()
 
 const { processErrorGlobal } = useAppInit('LayoutIndexPage')
-const { init: initB24Frame } = useB24()
+const { openAppSlider } = useB24()
 
 useHead({
   bodyAttrs: {
@@ -27,12 +27,12 @@ useHead({
 // prerender, where there is no portal frame at all.
 const makeOpenFeedBack = async () => {
   try {
-    const $b24 = await initB24Frame()
-    await $b24?.slider.openSliderAppPage({
-      place: 'feedback',
-      bx24_width: 600,
-      bx24_title: t('page.feedback.seo.title')
-    })
+    // 'no-frame' stays silent (outside a portal the click was always a no-op); a REFUSAL from a
+    // live portal must surface — a button that silently does nothing breaks text rule 3.
+    const result = await openAppSlider('feedback', { width: 600, title: t('page.feedback.seo.title') })
+    if (result === 'refused') {
+      throw new Error('portal refused to open the feedback slider')
+    }
   } catch (error) {
     processErrorGlobal(error, {
       homePageIsHide: true,

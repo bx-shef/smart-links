@@ -4,6 +4,7 @@ import { makeOauthRefresh, type FetchLike } from '../utils/b24Oauth'
 import { runTokenKeepAlive } from '../utils/tokenKeepAlive'
 import { tokenEncryptionReady } from '../utils/secretCrypto'
 import { edgeSecurityEnabled } from '../utils/edgeSecurity'
+import { persistKeepAliveHealth, recordKeepAliveRun } from '../utils/keepAliveStatus'
 import { readIntEnv } from '../utils/envNumber'
 import { checkAppEnv } from '../utils/envCheck'
 import { markMaintenanceRun, shouldRunMaintenance } from '../utils/maintenanceSchedule'
@@ -75,6 +76,8 @@ export default defineNitroPlugin((nitroApp) => {
         clientSecret,
         encKey
       })
+      recordKeepAliveRun({ failed: r.failed, lostRotations: r.lostRotations.length })
+      await persistKeepAliveHealth(query)
       if (r.considered > 0) {
         console.info(`[maintenance] token keep-alive: ${r.refreshed}/${r.considered} refreshed, ${r.failed} failed`)
         for (const hash of r.failedPortals) {
@@ -90,7 +93,9 @@ export default defineNitroPlugin((nitroApp) => {
         }
       }
     } catch (err) {
+      recordKeepAliveRun('error')
       console.error('[maintenance] token keep-alive failed', (err as Error).message)
+      await persistKeepAliveHealth(query)
     }
   }
 
