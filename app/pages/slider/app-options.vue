@@ -21,7 +21,7 @@ const toast = useToast()
 const { $logger, moduleId, initApp, destroyB24Helper, usePullClient, startPullClient, processErrorGlobal } = useAppInit('SliderAppOptionsPage')
 const appSettings = useAppSettingsStore()
 const user = useUserStore()
-const { init: initB24Frame } = useB24()
+const { init: initB24Frame, closeSlider } = useB24()
 let $b24: null | B24Frame = null
 
 const ufCode = ref('')
@@ -383,11 +383,11 @@ async function makeSendPullCommand(command: string, params: Record<string, any> 
 }
 
 async function makeClose() {
-  await $b24?.parent.closeApplication()
+  await closeSlider()
 }
 
 async function makeCancel() {
-  await $b24?.parent.closeApplication()
+  await closeSlider()
 }
 // endregion ////
 

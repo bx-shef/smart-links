@@ -137,3 +137,80 @@ describe('useB24().auth', () => {
     expect(auth()).toBeNull()
   })
 })
+
+describe('useB24().openAppSlider / closeSlider', () => {
+  const sliderFrame = () => {
+    const calls: unknown[] = []
+    const closes: number[] = []
+    return {
+      frame: {
+        auth: { getAuthData: () => ({ access_token: 'tok', domain: 'portal.bitrix24.by' }) },
+        slider: {
+          openSliderAppPage: (payload: unknown) => {
+            calls.push(payload)
+            return Promise.resolve()
+          }
+        },
+        parent: {
+          closeApplication: () => {
+            closes.push(1)
+            return Promise.resolve()
+          }
+        }
+      },
+      calls,
+      closes
+    }
+  }
+
+  it('sends EXACTLY the option keys the portal parses — the bx24_witdh typo class dies here', async () => {
+    const { frame, calls } = sliderFrame()
+    initializeB24Frame.mockResolvedValue(frame)
+    const { openAppSlider } = await loadUseB24()
+    expect(await openAppSlider('feedback', { width: 600, title: 'Отзыв' })).toBe(true)
+    expect(calls[0]).toEqual({ place: 'feedback', bx24_width: 600, bx24_title: 'Отзыв' })
+  })
+
+  it('extra params ride into placement.options and cannot shadow the magic keys', async () => {
+    const { frame, calls } = sliderFrame()
+    initializeB24Frame.mockResolvedValue(frame)
+    const { openAppSlider } = await loadUseB24()
+    await openAppSlider('app-options', {
+      width: 650,
+      // A param spelled like a magic key must lose to the explicit option — spreads are ordered.
+      params: { ufCode: 'UF_CRM_1', bx24_width: '13' as unknown as string }
+    })
+    expect(calls[0]).toEqual({ place: 'app-options', ufCode: 'UF_CRM_1', bx24_width: 650 })
+  })
+
+  it('no title → no bx24_title key at all (an empty title would render an empty header)', async () => {
+    const { frame, calls } = sliderFrame()
+    initializeB24Frame.mockResolvedValue(frame)
+    const { openAppSlider } = await loadUseB24()
+    await openAppSlider('feedback', { width: 600 })
+    expect(Object.keys(calls[0] as object)).not.toContain('bx24_title')
+  })
+
+  it('outside a portal: open answers false, close is a silent no-op', async () => {
+    initializeB24Frame.mockRejectedValue(new Error('no frame'))
+    const { openAppSlider, closeSlider } = await loadUseB24()
+    expect(await openAppSlider('feedback', { width: 600 })).toBe(false)
+    await expect(closeSlider()).resolves.toBeUndefined()
+  })
+
+  it('a portal refusal answers false instead of throwing into the caller', async () => {
+    const { frame } = sliderFrame()
+    frame.slider.openSliderAppPage = () => Promise.reject(new Error('refused'))
+    initializeB24Frame.mockResolvedValue(frame)
+    const { openAppSlider } = await loadUseB24()
+    expect(await openAppSlider('feedback', { width: 600 })).toBe(false)
+  })
+
+  it('closeSlider sends parent.closeApplication once', async () => {
+    const { frame, closes } = sliderFrame()
+    initializeB24Frame.mockResolvedValue(frame)
+    const { closeSlider } = await loadUseB24()
+    await closeSlider()
+    expect(closes.length).toBe(1)
+  })
+})

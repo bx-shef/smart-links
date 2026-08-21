@@ -74,5 +74,51 @@ export function useB24() {
     return { accessToken: a.access_token, domain: a.domain }
   }
 
-  return { init, get, auth }
+  /**
+   * Open an in-app slider page (`place` is routed by the global middleware). One shared entry for
+   * the payload, ported from the reference: the option keys are magic strings the portal parses
+   * (`bx24_width`, `bx24_title`), and the typo class `bx24_witdh` produces a default-size slider
+   * with no error anywhere — the payload shape is pinned by tests/useB24.test.ts. Extra string
+   * params (e.g. ufCode for the settings slider) ride along into `placement.options`.
+   *
+   * Returns false when not framed or the portal refused — callers treat that as «no slider».
+   *
+   * ⚠ Known portal defect, NOT ours (b24jssdk#328, dug out by the reference): after CLOSING a
+   * slider the portal's own close handler throws on a cyclic-JSON serialise before reaching
+   * `focusTrap.deactivate()`, so the parent page keeps `inert` — the portal stops responding to
+   * clicks until reload. Changing the close method cannot dodge it: `parent.closeApplication()`
+   * and `slider.closeSliderAppPage()` send the IDENTICAL command (verified in the SDK source by
+   * the reference). Nothing to fix on our side; the fix is awaited in the portal.
+   */
+  async function openAppSlider(
+    place: string,
+    opts: { width: number, title?: string, params?: Record<string, string> }
+  ): Promise<boolean> {
+    const f = await init()
+    if (!f) {
+      return false
+    }
+    try {
+      await f.slider.openSliderAppPage({
+        place,
+        ...(opts.params ?? {}),
+        bx24_width: opts.width,
+        ...(opts.title ? { bx24_title: opts.title } : {})
+      })
+      return true
+    } catch {
+      return false
+    }
+  }
+
+  /** Close the current app slider overlay. Swallows «not framed». See the b24jssdk#328 note on
+   *  openAppSlider: the portal may leave the parent page inert after this — known, not ours. */
+  async function closeSlider(): Promise<void> {
+    const f = await init()
+    try {
+      await f?.parent.closeApplication()
+    } catch { /* not framed → nothing to close */ }
+  }
+
+  return { init, get, auth, openAppSlider, closeSlider }
 }
