@@ -8,6 +8,7 @@ import { useLinkStore } from '~/stores/link'
 import { useUserStore } from '~/stores/user'
 import { useAppSettingsStore } from '~/stores/appSettings'
 import { sleepAction } from '~/utils/sleep'
+import { createSingleFlight, reloadDelayMs } from '~/utils/loadCoalesce'
 import { resolveIblockTypeId } from '~/utils/listsTarget'
 import { isNumericQuery, mergeSearchRows } from '~/utils/listsSearch'
 import { PLACEMENT_MIN_HEIGHT } from '~/utils/placement'
@@ -644,22 +645,58 @@ function openSliderAppSettings() {
   })
 }
 
+// Broadcast reloads are jittered and coalesced (app/utils/loadCoalesce.ts). The pull command
+// wakes EVERY open card of every employee at the moment the admin picked, and each reload costs
+// several REST calls from the portal's own quota — without the spread and the single flight one
+// «Save» on a portal with dozens of open cards is a self-made QUERY_LIMIT_EXCEEDED burst, and the
+// throttled cards show a load error instead of the change.
+const reloadFlight = createSingleFlight()
+
+/**
+ * A load failure that loadData already put on screen, converted into a rejection.
+ *
+ * The load path reports its own failures instead of throwing — deliberately, see loadData's
+ * docblock: its other caller runs right after a successful write, where a thrown refresh error
+ * would masquerade as the write failing. But the flight NEEDS the rejection: a task that
+ * "resolves" after QUERY_LIMIT_EXCEEDED would run the queued tail — an automatic retry against a
+ * portal that just refused, exactly what the coalescing exists to prevent. The heavy REST calls
+ * (crm.item.list, lists.element.get) live on that swallowing path, so without this signal the
+ * tail-drop guarantee held only for the cheap app.option read. (Found by a reviewer.)
+ */
+class ReportedReloadError extends Error {}
+
 const makeSendPullCommandHandler = async (message: TypePullMessage) => {
   if (message.command === 'reload.options') {
     $logger.warn("Get pull command for update. Reinit the application")
-    actionError.value = ''
-    // The try/finally is not optional here. The SDK invokes pull callbacks fire-and-forget, so a
-    // rejection anywhere in this chain is an unhandled promise rejection: the line clearing the
-    // spinner never runs, and the layout hides the whole placement behind it until the CRM card is
-    // reloaded. An admin saving settings would spin every open card in the portal.
-    page.isLoading = true
+    // The jitter comes BEFORE the spinner goes up: the card keeps showing its current (stale for
+    // a few seconds at most) state instead of a long spinner. Actions in THIS card never route
+    // through the handler, so the delay only applies to broadcast-triggered reloads — including
+    // the saving admin's own other open cards.
+    await sleepAction(reloadDelayMs())
+    // The try/catch around the flight is not optional. The SDK invokes pull callbacks
+    // fire-and-forget, so a rejection escaping this chain is an unhandled promise rejection: the
+    // spinner would never clear and the layout would hide the whole placement behind it until the
+    // CRM card is reloaded.
     try {
-      await reloadData()
-      await loadData()
+      await reloadFlight.run(async () => {
+        actionError.value = ''
+        page.isLoading = true
+        try {
+          await reloadData()
+          await loadData()
+        } finally {
+          page.isLoading = false
+        }
+        if (actionError.value) {
+          throw new ReportedReloadError(actionError.value)
+        }
+      })
     } catch (error) {
-      reportActionError(error, 'uf.smart-link.error.load')
-    } finally {
-      page.isLoading = false
+      // The sentinel is already on screen — reporting it again would only duplicate the log.
+      // Anything else (the app.option read, a torn-down frame after unmount) is reported now.
+      if (!(error instanceof ReportedReloadError)) {
+        reportActionError(error, 'uf.smart-link.error.load')
+      }
     }
   }
 }

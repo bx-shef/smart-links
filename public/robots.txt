@@ -1,7 +1,3 @@
 User-agent: *
 Allow: /
 Disallow: /api/
-Disallow: /app
-Disallow: /install
-Disallow: /handler/
-Disallow: /slider/
