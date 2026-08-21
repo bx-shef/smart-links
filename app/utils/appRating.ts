@@ -5,6 +5,12 @@
  * Builds the Bitrix24 Market detail path for a listing code.
  * Empty/blank code → null, which the caller treats as "feature disabled" (fail-safe:
  * never open a broken marketplace path).
+ *
+ * REST-fact note (from the reference app, NOT verified live here): portals were also observed to
+ * open Market cards as `/marketplace/app/<numeric id>/`. The `detail/<code>` form below is what
+ * the reference ships and what its portals accept; if the live run shows a portal that refuses
+ * it, the numeric form is the first alternative to try — per the house rule, verify on a live
+ * portal before switching.
  */
 export function marketDetailPath(code: string | undefined | null): string | null {
   const slug = (code ?? '').trim()
