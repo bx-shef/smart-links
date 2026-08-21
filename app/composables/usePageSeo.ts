@@ -15,8 +15,10 @@ export function usePageSeo() {
   useSeoMeta({
     title: () => page.title || t('app.name'),
     description: () => page.description || undefined,
-    // robots.txt stops crawling, but a URL found via an external link can still be INDEXED (listed
-    // without a snippet). These pages are only meaningful inside a portal iframe, so say so here too.
+    // This noindex is the ONLY thing keeping in-portal pages out of search results — robots.txt
+    // deliberately does NOT Disallow them. A Disallow'ed URL is never crawled, so its noindex is
+    // never seen, and the URL can still be indexed from an external link (listed without a
+    // snippet). To let the noindex work, the crawler must be allowed to fetch the page.
     robots: 'noindex, nofollow'
   })
 }

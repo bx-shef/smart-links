@@ -72,8 +72,10 @@ in-portal-страницы, публичный лендинг и `/api/*` — к
     `getBaseUrl()` (читает `window.location`) вызывается внутри шага установки.
   - `config.b24form.ts` переведён на функцию `useB24FormConfig()` — `useRuntimeConfig()` на уровне
     модуля ронял пререндер `/slider/feedback` (500).
-  - `robots.txt`: `Allow: /` для лендинга, `Disallow` на `/api/`, `/app`, `/install`, `/handler/`,
-    `/slider/`.
+  - `robots.txt`: `Allow: /` для лендинга, `Disallow` только на `/api/`. In-portal-страницы из
+    выдачи держит `noindex` в `usePageSeo`, и он работает лишь пока краулеру разрешено их читать:
+    `Disallow` прятал бы от него сам `noindex` (первая редакция закрывала и их — исправлено по
+    уроку эталона #292/#296, гард — `tests/robotsTxt.test.ts`).
   - **SDK не попадает в entry-чанк лендинга.** Плагин `@bitrix24/b24jssdk-nuxt` отключён (он
     импортирует SDK статически), фрейм поднимает `composables/useB24.ts` — ленивый `import()` +
     идемпотентный `init()`, как в эталоне. Замер: entry 641 КБ → 352 КБ, SDK уехал в отдельный
