@@ -93,21 +93,33 @@ export function useB24() {
   async function openAppSlider(
     place: string,
     opts: { width: number, title?: string, params?: Record<string, string> }
-  ): Promise<boolean> {
+  ): Promise<'opened' | 'no-frame' | 'refused'> {
     const f = await init()
     if (!f) {
-      return false
+      // Outside a portal (or a cached failed handshake). Callers stay silent here — the same
+      // click was a silent no-op before the wrapper, and there is no portal to complain to.
+      return 'no-frame'
     }
+    // The magic keys are stripped from params rather than relying on spread order: `place` is
+    // spread first (a params «place» would win and reroute the slider), and an absent title
+    // leaves the bx24_title slot open. No current caller passes them — this keeps the JSDoc
+    // claim true instead of mostly-true.
+    const params = Object.fromEntries(
+      Object.entries(opts.params ?? {}).filter(([key]) => !['place', 'bx24_width', 'bx24_title'].includes(key))
+    )
     try {
       await f.slider.openSliderAppPage({
         place,
-        ...(opts.params ?? {}),
+        ...params,
         bx24_width: opts.width,
         ...(opts.title ? { bx24_title: opts.title } : {})
       })
-      return true
-    } catch {
-      return false
+      return 'opened'
+    } catch (error) {
+      // Distinct from 'no-frame': HERE a real portal refused a real command — callers with an
+      // error surface should show it (a click that silently does nothing breaks text rule 3).
+      console.warn('[useB24] portal refused to open slider', place, error)
+      return 'refused'
     }
   }
 
@@ -117,7 +129,11 @@ export function useB24() {
     const f = await init()
     try {
       await f?.parent.closeApplication()
-    } catch { /* not framed → nothing to close */ }
+    } catch (error) {
+      // A refused close leaves the slider on screen — the person can still close it with the
+      // portal's own «×», so log rather than surface.
+      console.warn('[useB24] portal refused to close slider', error)
+    }
   }
 
   return { init, get, auth, openAppSlider, closeSlider }

@@ -27,7 +27,12 @@ useHead({
 // prerender, where there is no portal frame at all.
 const makeOpenFeedBack = async () => {
   try {
-    await openAppSlider('feedback', { width: 600, title: t('page.feedback.seo.title') })
+    // 'no-frame' stays silent (outside a portal the click was always a no-op); a REFUSAL from a
+    // live portal must surface — a button that silently does nothing breaks text rule 3.
+    const result = await openAppSlider('feedback', { width: 600, title: t('page.feedback.seo.title') })
+    if (result === 'refused') {
+      throw new Error('portal refused to open the feedback slider')
+    }
   } catch (error) {
     processErrorGlobal(error, {
       homePageIsHide: true,

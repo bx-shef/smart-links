@@ -29,11 +29,17 @@ describe('documentation structure', () => {
   })
 
   it('docs/README.md indexes every document, and every indexed document exists', () => {
-    const index = readFileSync(resolve(DOCS, 'README.md'), 'utf8')
+    const readme = readFileSync(resolve(DOCS, 'README.md'), 'utf8')
+    // Parse ONLY the «Оглавление» section: prose elsewhere (the «Статус» paragraph) also links
+    // sibling docs, and matching the whole page let a deleted TOC row pass as long as the doc was
+    // mentioned anywhere — a mutation run proved five of ten rows were unguarded that way.
+    const start = readme.indexOf('## Оглавление')
+    expect(start).toBeGreaterThanOrEqual(0)
+    const rest = readme.slice(start + 1)
+    const end = rest.indexOf('\n## ')
+    const index = rest.slice(0, end === -1 ? undefined : end)
     const indexed = [...index.matchAll(/\[`([^`]+\.md)`\]\(([^)]+)\)/g)]
       .map(m => m[1]!)
-      // The table of contents lists sibling files; cross-references to the same file elsewhere in
-      // the page are fine but only the docs/*.md links count for the completeness check.
       .filter(name => !name.includes('/'))
 
     for (const file of docsFiles) {
@@ -47,13 +53,22 @@ describe('documentation structure', () => {
 
   it('local links inside docs/ resolve to files that exist', () => {
     // Dead cross-links are how a doc set rots invisibly: the link renders fine until clicked.
-    const known = new Set([...docsFiles, ...rootDocs])
+    // Namespaces matter: from inside docs/, a bare `X.md` must be a docs/ sibling, `../X.md` a
+    // root file — merging the two pools let `(CLAUDE.md)` written in a docs file pass while the
+    // rendered link 404s.
     for (const file of docsFiles) {
       const text = readFileSync(resolve(DOCS, file), 'utf8')
       for (const m of text.matchAll(/\]\(([\w./-]+\.md)(#[^)]*)?\)/g)) {
         const target = m[1]!
-        const base = target.replace(/^\.\.\//, '').replace(/^docs\//, '')
-        expect(known.has(base), `${file} ссылается на несуществующий ${target}`).toBe(true)
+        let base = target.replace(/^\.\//, '')
+        let pool = docsFiles
+        let poolName = 'docs/'
+        if (base.startsWith('../')) {
+          base = base.slice(3)
+          pool = rootDocs
+          poolName = 'корне'
+        }
+        expect(pool.includes(base), `${file} ссылается на ${target}, которого нет в ${poolName}`).toBe(true)
       }
     }
   })

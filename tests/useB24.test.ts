@@ -167,7 +167,7 @@ describe('useB24().openAppSlider / closeSlider', () => {
     const { frame, calls } = sliderFrame()
     initializeB24Frame.mockResolvedValue(frame)
     const { openAppSlider } = await loadUseB24()
-    expect(await openAppSlider('feedback', { width: 600, title: 'Отзыв' })).toBe(true)
+    expect(await openAppSlider('feedback', { width: 600, title: 'Отзыв' })).toBe('opened')
     expect(calls[0]).toEqual({ place: 'feedback', bx24_width: 600, bx24_title: 'Отзыв' })
   })
 
@@ -177,8 +177,9 @@ describe('useB24().openAppSlider / closeSlider', () => {
     const { openAppSlider } = await loadUseB24()
     await openAppSlider('app-options', {
       width: 650,
-      // A param spelled like a magic key must lose to the explicit option — spreads are ordered.
-      params: { ufCode: 'UF_CRM_1', bx24_width: '13' as unknown as string }
+      // Params spelled like magic keys are STRIPPED, not merely out-spread: `place` is spread
+      // first and would otherwise lose to a params «place», rerouting the slider.
+      params: { ufCode: 'UF_CRM_1', bx24_width: '13', place: 'evil', bx24_title: 'evil' }
     })
     expect(calls[0]).toEqual({ place: 'app-options', ufCode: 'UF_CRM_1', bx24_width: 650 })
   })
@@ -191,19 +192,21 @@ describe('useB24().openAppSlider / closeSlider', () => {
     expect(Object.keys(calls[0] as object)).not.toContain('bx24_title')
   })
 
-  it('outside a portal: open answers false, close is a silent no-op', async () => {
+  it('outside a portal: open answers no-frame, close is a silent no-op', async () => {
     initializeB24Frame.mockRejectedValue(new Error('no frame'))
     const { openAppSlider, closeSlider } = await loadUseB24()
-    expect(await openAppSlider('feedback', { width: 600 })).toBe(false)
+    expect(await openAppSlider('feedback', { width: 600 })).toBe('no-frame')
     await expect(closeSlider()).resolves.toBeUndefined()
   })
 
-  it('a portal refusal answers false instead of throwing into the caller', async () => {
+  it('a portal refusal answers refused — distinct from no-frame, so callers can surface it', async () => {
     const { frame } = sliderFrame()
     frame.slider.openSliderAppPage = () => Promise.reject(new Error('refused'))
     initializeB24Frame.mockResolvedValue(frame)
     const { openAppSlider } = await loadUseB24()
-    expect(await openAppSlider('feedback', { width: 600 })).toBe(false)
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
+    expect(await openAppSlider('feedback', { width: 600 })).toBe('refused')
+    warn.mockRestore()
   })
 
   it('closeSlider sends parent.closeApplication once', async () => {

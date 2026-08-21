@@ -15,13 +15,16 @@ const ROOT = resolve(__dirname, '..')
 const example = readFileSync(resolve(ROOT, '.env.example'), 'utf8')
 const nuxtConfig = readFileSync(resolve(ROOT, 'nuxt.config.ts'), 'utf8')
 
-/** Keys assigned EMPTY in the example (`KEY=` or `KEY=""`/`KEY=''`, not commented out). */
+/** Keys assigned EMPTY in the example, in every spelling dotenv treats as a SET empty value:
+ *  bare `KEY=`, quoted `KEY=""`/`KEY=''`/`KEY=\`\``, with `export `, spaces around `=`, or a
+ *  trailing `# comment`. (A quoted blank like `KEY=" "` still evades — it is a non-empty string
+ *  to dotenv; the guard covers the empty class, not every whitespace value.) */
 function emptyAssignments(): string[] {
   return example
     .split('\n')
-    .map(l => l.trim())
-    .filter(l => /^[A-Z_][A-Z0-9_]*=("{2}|'{2})?$/.test(l))
-    .map(l => l.split('=')[0]!)
+    .map(l => l.trim().replace(/^export\s+/, ''))
+    .filter(l => /^[A-Z0-9_]+\s*=\s*(?:"{2}|'{2}|`{2})?\s*(?:#.*)?$/.test(l))
+    .map(l => l.split('=')[0]!.trim())
 }
 
 /**
@@ -40,12 +43,11 @@ function publicKeysWithDefaults(): string[] {
   return out
 }
 
-/** `b24MarketZone` → `NUXT_PUBLIC_B24_MARKET_ZONE`: the same scheme Nuxt itself applies. */
+/** `b24MarketZone` → `NUXT_PUBLIC_B24_MARKET_ZONE`: mirrors Nuxt's own snake-casing (scule),
+ *  which splits on lower→UPPER boundaries only — `apiV2Url` maps to `API_V2_URL`, not
+ *  `API_V_2_URL`; an extra digit split here would defend a phantom name. */
 function envNameFor(camel: string): string {
-  return `NUXT_PUBLIC_${camel
-    .replace(/([a-z0-9])([A-Z])/g, '$1_$2')
-    .replace(/([A-Z])(\d)/g, '$1_$2')
-    .toUpperCase()}`
+  return `NUXT_PUBLIC_${camel.replace(/([a-z0-9])([A-Z])/g, '$1_$2').toUpperCase()}`
 }
 
 describe('.env.example does not silently disable documented defaults', () => {
