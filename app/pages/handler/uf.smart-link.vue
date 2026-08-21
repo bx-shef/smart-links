@@ -11,6 +11,7 @@ import { sleepAction } from '~/utils/sleep'
 import { createSingleFlight, reloadDelayMs } from '~/utils/loadCoalesce'
 import { resolveIblockTypeId } from '~/utils/listsTarget'
 import { isNumericQuery, mergeSearchRows } from '~/utils/listsSearch'
+import { buildCrmSearchFilter, buildListsSearchFilter } from '~/utils/targetSearch'
 import { PLACEMENT_MIN_HEIGHT } from '~/utils/placement'
 import DeleteHyperlinkIcon from '@bitrix24/b24icons-vue/main/DeleteHyperlinkIcon'
 import DocumentPlusIcon from '@bitrix24/b24icons-vue/main/DocumentPlusIcon'
@@ -287,32 +288,14 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
   try
   {
     if (configUfSetting.value.target.entityMode === 'crm') {
-      const filter = Object.assign(
-        {},
-        configUfSetting.value.target.customFilter ?? {}
-      )
-
-      if (configUfSetting.value.orign.isFilterBy.company) {
-        filter[configUfSetting.value.target.clientFields.companyId] = filterFromOrigin.value.companyId
-      }
-      if (configUfSetting.value.orign.isFilterBy.contact) {
-        filter[configUfSetting.value.target.clientFields.contactId] = filterFromOrigin.value.contactId
-      }
-
       // Trimmed, like the Lists branch: a copy-pasted " 12 " should mean the record number, and a
-      // whitespace-only query should mean "no query", in both target modes alike.
-      const crmQuery = filterTitle.value.trim()
-      if (crmQuery.length > 0) {
-        filter[0] = {
-          'logic': 'OR',
-          '0': {
-            '=id': crmQuery
-          },
-          '1': {
-            '%=title': `%${crmQuery}%`
-          }
-        }
-      }
+      // whitespace-only query should mean "no query", in both target modes alike. The filter
+      // shape itself lives in a tested util (app/utils/targetSearch.ts).
+      const filter = buildCrmSearchFilter(
+        configUfSetting.value,
+        filterFromOrigin.value,
+        filterTitle.value.trim()
+      )
 
 
       const params = {
@@ -340,17 +323,8 @@ async function preLoadData( isFixLoadPage: boolean = true ) {
       // without saying so an unfiltered portal with 200 deals reads as a portal with 50.
       listTruncated.value = listEntity.value.length >= REST_PAGE_SIZE
     } else if (configUfSetting.value.target.entityMode === 'lists') {
-      const filter = Object.assign(
-        {},
-        configUfSetting.value.target.customFilter ?? {},
-      )
-
-      if (configUfSetting.value.orign.isFilterBy.company) {
-        filter[configUfSetting.value.target.clientFields.companyId] = `CO_${filterFromOrigin.value.companyId}`
-      }
-      if (configUfSetting.value.orign.isFilterBy.contact) {
-        filter[configUfSetting.value.target.clientFields.contactId] = `C_${filterFromOrigin.value.contactId}`
-      }
+      // Base filter (CO_/C_ prefixes, custom filter) — tested util, same file as the CRM shape.
+      const filter = buildListsSearchFilter(configUfSetting.value, filterFromOrigin.value)
 
       // Two passes because the Lists filter has no OR: by exact ID (only when the query can BE an
       // id — a word there is a wasted call), then by %NAME. Merge and dedup live in a tested util:
