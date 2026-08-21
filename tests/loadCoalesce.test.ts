@@ -1,5 +1,7 @@
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { describe, expect, it, vi } from 'vitest'
-import { createSingleFlight, reloadDelayMs, SETTINGS_RELOAD_JITTER_MS } from '../app/utils/loadCoalesce'
+import { createSingleFlight, reloadDelayMs, SETTINGS_RELOAD_JITTER_MS } from '~/utils/loadCoalesce'
 
 /** A task whose completion the test controls. */
 function makeGate() {
@@ -143,5 +145,32 @@ describe('reloadDelayMs: spread before a broadcast-triggered reload', () => {
     expect(reloadDelayMs(() => -1)).toBe(0)
     expect(reloadDelayMs(() => 1)).toBe(0)
     expect(reloadDelayMs(() => 2)).toBe(0)
+  })
+})
+
+// The utility being perfect is not enough: deleting one line of wiring in the placement handler
+// silently restores the burst while this whole suite stays green. Same static-source guard style
+// as tests/robotsTxt.test.ts — the wiring is inside a .vue page the unit project cannot mount.
+describe('wiring: the placement handler jitters and coalesces broadcast reloads', () => {
+  const src = readFileSync(
+    resolve(__dirname, '../app/pages/handler/uf.smart-link.vue'),
+    'utf8'
+  )
+
+  it('the reload.options handler waits a jittered delay before reloading', () => {
+    expect(src).toMatch(/await sleepAction\(reloadDelayMs\(\)\)/)
+  })
+
+  it('the reload goes through the single flight', () => {
+    expect(src).toMatch(/createSingleFlight\(\)/)
+    expect(src).toMatch(/reloadFlight\.run\(/)
+  })
+
+  it('an on-screen load failure still rejects the flight so the queued tail is dropped', () => {
+    // loadData swallows its own errors by design; the handler converts the reported error into a
+    // rejection via the sentinel class. Without it, QUERY_LIMIT_EXCEEDED on the heavy path would
+    // "succeed" and the tail would auto-retry against the refusing portal.
+    expect(src).toMatch(/class ReportedReloadError extends Error/)
+    expect(src).toMatch(/throw new ReportedReloadError/)
   })
 })

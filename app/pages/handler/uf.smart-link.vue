@@ -652,19 +652,31 @@ function openSliderAppSettings() {
 // throttled cards show a load error instead of the change.
 const reloadFlight = createSingleFlight()
 
+/**
+ * A load failure that loadData already put on screen, converted into a rejection.
+ *
+ * The load path reports its own failures instead of throwing — deliberately, see loadData's
+ * docblock: its other caller runs right after a successful write, where a thrown refresh error
+ * would masquerade as the write failing. But the flight NEEDS the rejection: a task that
+ * "resolves" after QUERY_LIMIT_EXCEEDED would run the queued tail — an automatic retry against a
+ * portal that just refused, exactly what the coalescing exists to prevent. The heavy REST calls
+ * (crm.item.list, lists.element.get) live on that swallowing path, so without this signal the
+ * tail-drop guarantee held only for the cheap app.option read. (Found by a reviewer.)
+ */
+class ReportedReloadError extends Error {}
+
 const makeSendPullCommandHandler = async (message: TypePullMessage) => {
   if (message.command === 'reload.options') {
     $logger.warn("Get pull command for update. Reinit the application")
     // The jitter comes BEFORE the spinner goes up: the card keeps showing its current (stale for
-    // a few seconds at most) state instead of a long spinner. A user's own actions never pass
-    // through this handler, so the delay only ever applies to someone else's save.
+    // a few seconds at most) state instead of a long spinner. Actions in THIS card never route
+    // through the handler, so the delay only applies to broadcast-triggered reloads — including
+    // the saving admin's own other open cards.
     await sleepAction(reloadDelayMs())
     // The try/catch around the flight is not optional. The SDK invokes pull callbacks
     // fire-and-forget, so a rejection escaping this chain is an unhandled promise rejection: the
     // spinner would never clear and the layout would hide the whole placement behind it until the
-    // CRM card is reloaded. The task itself must THROW on failure (not swallow) so the flight can
-    // drop its queued tail — an automatic retry against a portal that is already refusing
-    // requests would add load exactly when it is least affordable.
+    // CRM card is reloaded.
     try {
       await reloadFlight.run(async () => {
         actionError.value = ''
@@ -675,9 +687,16 @@ const makeSendPullCommandHandler = async (message: TypePullMessage) => {
         } finally {
           page.isLoading = false
         }
+        if (actionError.value) {
+          throw new ReportedReloadError(actionError.value)
+        }
       })
     } catch (error) {
-      reportActionError(error, 'uf.smart-link.error.load')
+      // The sentinel is already on screen — reporting it again would only duplicate the log.
+      // Anything else (the app.option read, a torn-down frame after unmount) is reported now.
+      if (!(error instanceof ReportedReloadError)) {
+        reportActionError(error, 'uf.smart-link.error.load')
+      }
     }
   }
 }
